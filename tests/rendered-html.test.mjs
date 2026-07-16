@@ -19,6 +19,9 @@ test("ships the GTD Flow product shell", async () => {
   assert.match(app, /aria-multiselectable/);
   assert.match(app, /allowCreate/);
   assert.match(app, /创建新的任务情境/);
+  assert.match(app, /创建新的任务标签/);
+  assert.match(app, /执行步骤/);
+  assert.match(app, /removeTaskTree/);
   assert.doesNotMatch(app, /<select/);
   assert.doesNotMatch(
     `${page}${layout}${packageJson}`,

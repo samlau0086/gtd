@@ -326,6 +326,7 @@ function TaskRow({
   onSelect,
   onToggle,
   onImportant,
+  stepProgress,
 }: {
   task: Task;
   active: boolean;
@@ -333,6 +334,7 @@ function TaskRow({
   onSelect: () => void;
   onToggle: () => void;
   onImportant: () => void;
+  stepProgress?: { done: number; total: number };
 }) {
   return (
     <article
@@ -372,6 +374,11 @@ function TaskRow({
             </span>
           )}
           {task.context && <span>@{task.context}</span>}
+          {stepProgress && stepProgress.total > 0 && (
+            <span className="step-progress-meta">
+              ↳ {stepProgress.done}/{stepProgress.total} 步
+            </span>
+          )}
         </div>
       </div>
       <button
@@ -402,10 +409,13 @@ function SelectPopover({
   options,
   onChange,
   onMultiChange,
+  onCreate,
   searchable = false,
   multiple = false,
   allowCreate = false,
   searchPlaceholder = "搜索选项…",
+  multipleLabel = "项",
+  createHint = "创建新选项",
   ariaLabel,
 }: {
   value: string;
@@ -413,10 +423,13 @@ function SelectPopover({
   options: SelectOption[];
   onChange: (value: string) => void;
   onMultiChange?: (values: string[]) => void;
+  onCreate?: (label: string) => void;
   searchable?: boolean;
   multiple?: boolean;
   allowCreate?: boolean;
   searchPlaceholder?: string;
+  multipleLabel?: string;
+  createHint?: string;
   ariaLabel: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -519,6 +532,15 @@ function SelectPopover({
     setOpen(false);
     trigger.current?.focus();
   };
+  const createOption = () => {
+    const label = query.trim();
+    if (!label) return;
+    if (onCreate) {
+      onCreate(label);
+      setQuery("");
+      setActive(0);
+    } else choose(label);
+  };
   const keydown = (event: React.KeyboardEvent) => {
     if (!open && ["Enter", " ", "ArrowDown"].includes(event.key)) {
       event.preventDefault();
@@ -544,7 +566,7 @@ function SelectPopover({
       choose(filtered[active].value);
     } else if (event.key === "Enter" && canCreate) {
       event.preventDefault();
-      choose(query.trim());
+      createOption();
     }
   };
   return (
@@ -563,7 +585,9 @@ function SelectPopover({
           {multiple && values.length > 1 ? (
             <>
               <b>✓</b>
-              <span>{values.length} 个前置任务</span>
+              <span>
+                {values.length} {multipleLabel}
+              </span>
             </>
           ) : (
             <>
@@ -646,13 +670,13 @@ function SelectPopover({
                 <button
                   type="button"
                   className="select-create"
-                  onClick={() => choose(query.trim())}
+                  onClick={createOption}
                 >
                   <span className="option-leading">
                     <b>＋</b>
                     <span>
                       <strong>使用“{query.trim()}”</strong>
-                      <small>创建新的任务情境</small>
+                      <small>{createHint}</small>
                     </span>
                   </span>
                 </button>
@@ -1181,6 +1205,7 @@ export function GTDApp() {
   const [aiTask, setAiTask] = useState<Task>();
   const [navOpen, setNavOpen] = useState(false);
   const [sync, setSync] = useState<"saved" | "saving" | "error">("saved");
+  const [subtaskTitle, setSubtaskTitle] = useState("");
   const loaded = useRef(false);
   useEffect(() => {
     fetch("/api/auth/config")
@@ -1257,6 +1282,7 @@ export function GTDApp() {
     );
     return () => clearTimeout(timer);
   }, [state, ready, supabaseReady, token]);
+  useEffect(() => setSubtaskTitle(""), [selectedId]);
   const setTask = useCallback(
     (id: string, patch: Partial<Task>) =>
       setState((current) => ({
@@ -1268,6 +1294,40 @@ export function GTDApp() {
     [],
   );
   const selected = state.tasks.find((task) => task.id === selectedId);
+  const childTasks = selected
+    ? state.tasks.filter((task) => task.parentTaskId === selected.id)
+    : [];
+  const completedChildCount = childTasks.filter(
+    (task) => task.status === "done",
+  ).length;
+  const removeTaskTree = (rootId: string) => {
+    setState((current) => {
+      const removed = new Set([rootId]);
+      let changed = true;
+      while (changed) {
+        changed = false;
+        for (const task of current.tasks) {
+          if (
+            task.parentTaskId &&
+            removed.has(task.parentTaskId) &&
+            !removed.has(task.id)
+          ) {
+            removed.add(task.id);
+            changed = true;
+          }
+        }
+      }
+      return {
+        ...current,
+        tasks: current.tasks
+          .filter((task) => !removed.has(task.id))
+          .map((task) => ({
+            ...task,
+            dependencyIds: task.dependencyIds.filter((id) => !removed.has(id)),
+          })),
+      };
+    });
+  };
   const projectOptions: SelectOption[] = [
     { value: "", label: "无项目", icon: "—" },
     ...state.projects.map((project) => ({
@@ -1302,6 +1362,12 @@ export function GTDApp() {
     value: context,
     label: context || "无情境",
     icon: context ? "@" : "—",
+  }));
+  const tagOptions: SelectOption[] = state.tags.map((tag) => ({
+    value: tag.id,
+    label: tag.name,
+    icon: "#",
+    meta: `${state.tasks.filter((task) => task.tagIds.includes(tag.id)).length} 个任务`,
   }));
   const createsCycle = (candidateId: string) => {
     const seen = new Set<string>();
@@ -1414,6 +1480,26 @@ export function GTDApp() {
     setState({ ...state, tasks: [...state.tasks, task] });
     setQuick("");
     setSelectedId(task.id);
+  };
+  const addSubtask = (event: FormEvent) => {
+    event.preventDefault();
+    if (!selected || !subtaskTitle.trim()) return;
+    const child: Task = {
+      id: uid(),
+      parentTaskId: selected.id,
+      projectId: selected.projectId,
+      title: subtaskTitle.trim(),
+      notes: "",
+      status: "next",
+      context: selected.context,
+      important: false,
+      estimate: 1,
+      sortOrder: state.tasks.length,
+      tagIds: [...selected.tagIds],
+      dependencyIds: [],
+    };
+    setState({ ...state, tasks: [...state.tasks, child] });
+    setSubtaskTitle("");
   };
   const signIn = (value: string, userEmail: string) => {
     localStorage.setItem("gtdflow-token", value);
@@ -1623,6 +1709,16 @@ export function GTDApp() {
                     project={state.projects.find(
                       (p) => p.id === task.projectId,
                     )}
+                    stepProgress={(() => {
+                      const steps = state.tasks.filter(
+                        (item) => item.parentTaskId === task.id,
+                      );
+                      return {
+                        total: steps.length,
+                        done: steps.filter((item) => item.status === "done")
+                          .length,
+                      };
+                    })()}
                     onSelect={() => setSelectedId(task.id)}
                     onToggle={() =>
                       setTask(task.id, {
@@ -1703,6 +1799,77 @@ export function GTDApp() {
             </div>
             <b>→</b>
           </button>
+          <section className="steps-card">
+            <header>
+              <div>
+                <strong>执行步骤</strong>
+                <span>
+                  {completedChildCount}/{childTasks.length} 已完成
+                </span>
+              </div>
+              {childTasks.length > 0 && (
+                <div className="steps-progress" aria-hidden>
+                  <i
+                    style={{
+                      width: `${Math.round((completedChildCount / childTasks.length) * 100)}%`,
+                    }}
+                  />
+                </div>
+              )}
+            </header>
+            {childTasks.length > 0 && (
+              <div className="steps-list">
+                {childTasks.map((step) => (
+                  <div className="step-item" key={step.id}>
+                    <button
+                      type="button"
+                      className={`check ${step.status === "done" ? "checked" : ""}`}
+                      aria-label={
+                        step.status === "done" ? "标记步骤未完成" : "完成步骤"
+                      }
+                      onClick={() =>
+                        setTask(step.id, {
+                          status: step.status === "done" ? "next" : "done",
+                        })
+                      }
+                    >
+                      {step.status === "done" ? "✓" : ""}
+                    </button>
+                    <input
+                      value={step.title}
+                      className={step.status === "done" ? "strike" : ""}
+                      onChange={(event) =>
+                        setTask(step.id, { title: event.target.value })
+                      }
+                      aria-label="步骤标题"
+                    />
+                    <button
+                      type="button"
+                      className="step-delete"
+                      aria-label="删除步骤"
+                      onClick={() => removeTaskTree(step.id)}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <form className="step-add" onSubmit={addSubtask}>
+              <span>＋</span>
+              <input
+                value={subtaskTitle}
+                onChange={(event) => setSubtaskTitle(event.target.value)}
+                placeholder={
+                  childTasks.length
+                    ? "添加下一步…"
+                    : "添加步骤，或让 AI 自动拆分…"
+                }
+                aria-label="添加执行步骤"
+              />
+              <button disabled={!subtaskTitle.trim()}>添加</button>
+            </form>
+          </section>
           <section className="detail-section">
             <label>
               <span>项目</span>
@@ -1735,6 +1902,7 @@ export function GTDApp() {
                 searchable
                 allowCreate
                 searchPlaceholder="搜索或创建情境…"
+                createHint="创建新的任务情境"
                 value={selected.context}
                 options={
                   selected.context &&
@@ -1752,6 +1920,37 @@ export function GTDApp() {
                     : contextOptions
                 }
                 onChange={(value) => setTask(selected.id, { context: value })}
+              />
+            </label>
+            <label>
+              <span>标签</span>
+              <SelectPopover
+                ariaLabel="选择任务标签"
+                searchable
+                multiple
+                allowCreate
+                multipleLabel="个标签"
+                searchPlaceholder="搜索或创建标签…"
+                createHint="创建新的任务标签"
+                value=""
+                values={selected.tagIds}
+                options={tagOptions}
+                onChange={() => undefined}
+                onMultiChange={(values) =>
+                  setTask(selected.id, { tagIds: values })
+                }
+                onCreate={(label) => {
+                  const tagId = uid();
+                  setState({
+                    ...state,
+                    tags: [...state.tags, { id: tagId, name: label }],
+                    tasks: state.tasks.map((task) =>
+                      task.id === selected.id
+                        ? { ...task, tagIds: [...task.tagIds, tagId] }
+                        : task,
+                    ),
+                  });
+                }}
               />
             </label>
           </section>
@@ -1803,6 +2002,7 @@ export function GTDApp() {
                 ariaLabel="选择前置任务"
                 searchable
                 multiple
+                multipleLabel="个前置任务"
                 searchPlaceholder="搜索任务标题或项目…"
                 value=""
                 values={selected.dependencyIds}
@@ -1826,17 +2026,7 @@ export function GTDApp() {
             <span>创建于今天</span>
             <button
               onClick={() => {
-                setState({
-                  ...state,
-                  tasks: state.tasks
-                    .filter((task) => task.id !== selected.id)
-                    .map((task) => ({
-                      ...task,
-                      dependencyIds: task.dependencyIds.filter(
-                        (id) => id !== selected.id,
-                      ),
-                    })),
-                });
+                removeTaskTree(selected.id);
                 setSelectedId(undefined);
               }}
             >
