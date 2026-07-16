@@ -655,6 +655,14 @@ select:focus-visible {
   background: transparent;
   color: #d47c77;
 }
+.test-connection {
+  background: #293232;
+  color: #a8b5b4;
+}
+.test-connection:hover {
+  background: #303b3a;
+  color: #dce5e4;
+}
 .security-note {
   margin: 17px 0 0;
   padding-top: 14px;

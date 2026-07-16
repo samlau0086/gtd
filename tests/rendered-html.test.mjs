@@ -30,7 +30,7 @@ test("ships the GTD Flow product shell", async () => {
 });
 
 test("ships durable data, auth and AI security boundaries", async () => {
-  const [hosting, migration, auth, crypto, ai, state] = await Promise.all([
+  const [hosting, migration, auth, crypto, ai, aiTest, state] = await Promise.all([
     readFile(new URL("../.openai/hosting.json", import.meta.url), "utf8"),
     readFile(
       new URL("../drizzle/0000_unique_bulldozer.sql", import.meta.url),
@@ -42,6 +42,10 @@ test("ships durable data, auth and AI security boundaries", async () => {
       new URL("../app/api/ai/decompose/route.ts", import.meta.url),
       "utf8",
     ),
+    readFile(
+      new URL("../app/api/ai/config/test/route.ts", import.meta.url),
+      "utf8",
+    ),
     readFile(new URL("../app/api/state/route.ts", import.meta.url), "utf8"),
   ]);
   assert.match(hosting, /"d1": "DB"/);
@@ -51,6 +55,10 @@ test("ships durable data, auth and AI security boundaries", async () => {
   assert.match(crypto, /AES-GCM/);
   assert.match(crypto, /privateHost/);
   assert.match(ai, /chat\/completions/);
+  assert.match(aiTest, /chat\/completions/);
+  assert.match(aiTest, /requireUser/);
+  assert.match(aiTest, /15000/);
+  assert.doesNotMatch(aiTest, /Response\.json\([^)]*apiKey/);
   assert.match(state, /WHERE user_id = \?/);
   assert.match(state, /DB\.batch/);
 });

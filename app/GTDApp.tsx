@@ -64,6 +64,11 @@ const iso = (date: Date) => date.toISOString().slice(0, 10);
 const addDays = (date: string, days: number) =>
   iso(new Date(new Date(`${date}T12:00:00`).getTime() + days * DAY));
 const today = () => iso(new Date());
+const startOfWeek = (date: string, weekStartsOn: "monday" | "sunday") => {
+  const day = new Date(`${date}T12:00:00`).getDay();
+  const offset = weekStartsOn === "monday" ? (day + 6) % 7 : day;
+  return addDays(date, -offset);
+};
 const formatDate = (value?: string) =>
   value
     ? new Intl.DateTimeFormat("zh-CN", {
@@ -752,11 +757,13 @@ function DependencyLines({
 function Gantt({
   tasks,
   projects,
+  weekStartsOn,
   onChange,
   onSelect,
 }: {
   tasks: Task[];
   projects: Project[];
+  weekStartsOn: "monday" | "sunday";
   onChange: (id: string, patch: Partial<Task>) => void;
   onSelect: (id: string) => void;
 }) {
@@ -769,7 +776,7 @@ function Gantt({
   );
   const earliest =
     scheduled.map((task) => task.startDate!).sort()[0] || today();
-  const start = addDays(earliest, -2);
+  const start = startOfWeek(earliest, weekStartsOn);
   const days = zoom === "month" ? 90 : zoom === "week" ? 42 : 21;
   const cell = zoom === "month" ? 9 : zoom === "week" ? 24 : 48;
   const columns = Array.from({ length: days }, (_, i) => addDays(start, i));
@@ -1220,7 +1227,7 @@ function SettingsDrawer({
     hasKey: false,
   });
   const [aiState, setAiState] = useState<
-    "idle" | "loading" | "saving" | "saved" | "error"
+    "idle" | "loading" | "saving" | "testing" | "saved" | "error"
   >("idle");
   const [aiMessage, setAiMessage] = useState("");
 
@@ -1325,6 +1332,38 @@ function SettingsDrawer({
     }
   };
 
+  const testAIConfig = async () => {
+    if (!token) return;
+    setAiState("testing");
+    setAiMessage("");
+    try {
+      const response = await fetch("/api/ai/config/test", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          baseUrl: config.baseUrl,
+          model: config.model,
+          apiKey: config.apiKey,
+        }),
+      });
+      const data = (await response.json()) as {
+        ok?: boolean;
+        latencyMs?: number;
+        error?: string;
+      };
+      if (!response.ok || !data.ok)
+        throw new Error(data.error || "连接测试失败");
+      setAiState("saved");
+      setAiMessage(`连接成功 · ${data.latencyMs || 0} ms`);
+    } catch (error) {
+      setAiState("error");
+      setAiMessage(error instanceof Error ? error.message : "连接测试失败");
+    }
+  };
+
   const exportData = () => {
     const blob = new Blob([JSON.stringify(state, null, 2)], {
       type: "application/json",
@@ -1424,7 +1463,8 @@ function SettingsDrawer({
                     {aiMessage && <div className={`settings-message ${aiState}`}>{aiMessage}</div>}
                     <div className="settings-actions">
                       {config.hasKey && <button className="danger-ghost" onClick={deleteAIConfig} disabled={aiState === "saving"}>删除配置</button>}
-                      <button className="primary" onClick={saveAIConfig} disabled={aiState === "saving" || aiState === "loading"}>{aiState === "saving" ? "保存中…" : "保存 AI 配置"}</button>
+                      <button className="test-connection" onClick={testAIConfig} disabled={aiState === "saving" || aiState === "loading" || aiState === "testing"}>{aiState === "testing" ? "测试中…" : "测试连接"}</button>
+                      <button className="primary" onClick={saveAIConfig} disabled={aiState === "saving" || aiState === "loading" || aiState === "testing"}>{aiState === "saving" ? "保存中…" : "保存 AI 配置"}</button>
                     </div>
                     <p className="security-note">密钥只发送到服务端并加密存储，浏览器不会读取已保存的原始密钥。</p>
                   </div>
@@ -2049,6 +2089,7 @@ export function GTDApp() {
                 : state.tasks.filter((task) => task.status !== "done")
             }
             projects={state.projects}
+            weekStartsOn={preferences.weekStartsOn}
             onChange={setTask}
             onSelect={setSelectedId}
           />
