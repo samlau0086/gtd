@@ -1269,7 +1269,7 @@ function SettingsDrawer({
   initialTab?: SettingsTab;
 }) {
   const [tab, setTab] = useState<SettingsTab>(initialTab || "general");
-  const [smtp, setSmtp] = useState({ host:"", port:587, username:"", password:"", mailFrom:"", secure:false, hasPassword:false });
+  const [mail, setMail] = useState({ provider:"smtp" as "smtp"|"resend", host:"", port:587, username:"", secret:"", mailFrom:"", secure:false, apiBaseUrl:"https://api.resend.com", hasSecret:false });
   const [smtpState, setSmtpState] = useState<"idle"|"loading"|"saving"|"testing"|"saved"|"error">("idle");
   const [smtpMessage, setSmtpMessage] = useState("");
   const [config, setConfig] = useState({
@@ -1324,12 +1324,12 @@ function SettingsDrawer({
   useEffect(() => {
     if (!token) return;
     setSmtpState("loading");
-    fetch("/api/admin/smtp", { headers:{ Authorization:`Bearer ${token}` } })
+    fetch("/api/admin/mail", { headers:{ Authorization:`Bearer ${token}` } })
       .then(async (response) => {
         if (response.status === 403) { setSmtpState("idle"); return; }
         const data = await response.json();
         if (!response.ok) throw new Error(data?.error || "读取邮件配置失败");
-        if (data) setSmtp((current) => ({ ...current, ...data, password:"" }));
+        if (data) setMail((current) => ({ ...current, ...data, secret:"" }));
         setSmtpState("idle");
       })
       .catch((error) => { setSmtpState("error"); setSmtpMessage(error instanceof Error ? error.message : "读取邮件配置失败"); });
@@ -1338,10 +1338,10 @@ function SettingsDrawer({
   const saveSmtp = async () => {
     setSmtpState("saving"); setSmtpMessage("");
     try {
-      const response = await fetch("/api/admin/smtp", { method:"PUT", headers:{ "Content-Type":"application/json", Authorization:`Bearer ${token}` }, body:JSON.stringify(smtp) });
+      const response = await fetch("/api/admin/mail", { method:"PUT", headers:{ "Content-Type":"application/json", Authorization:`Bearer ${token}` }, body:JSON.stringify(mail) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "保存失败");
-      setSmtp((current) => ({ ...current, ...data, password:"" }));
+      setMail((current) => ({ ...current, ...data, secret:"" }));
       setSmtpState("saved"); setSmtpMessage("邮件服务已加密保存，现在可以使用邮箱验证码登录");
     } catch (error) { setSmtpState("error"); setSmtpMessage(error instanceof Error ? error.message : "保存失败"); }
   };
@@ -1349,7 +1349,7 @@ function SettingsDrawer({
   const testSmtp = async () => {
     setSmtpState("testing"); setSmtpMessage("");
     try {
-      const response = await fetch("/api/admin/smtp/test", { method:"POST", headers:{ Authorization:`Bearer ${token}` } });
+      const response = await fetch("/api/admin/mail/test", { method:"POST", headers:{ Authorization:`Bearer ${token}` } });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "测试邮件发送失败");
       setSmtpState("saved"); setSmtpMessage(`测试邮件已发送到 ${email}`);
@@ -1533,17 +1533,27 @@ function SettingsDrawer({
             )}
             {tab === "smtp" && (
               <section className="settings-section">
-                <div className="settings-title"><h3>邮件服务</h3><p>配置用于发送 6 位登录验证码的 SMTP 服务，仅管理员可访问。</p></div>
+                <div className="settings-title"><h3>邮件服务</h3><p>选择 SMTP 或 Resend API 发送 6 位登录验证码，仅管理员可访问。</p></div>
                 <div className="ai-settings-card">
-                  <label>SMTP 主机<input value={smtp.host} onChange={(e) => setSmtp({ ...smtp, host:e.target.value })} placeholder="smtp.example.com" /></label>
-                  <label>端口<input type="number" min={1} max={65535} value={smtp.port} onChange={(e) => setSmtp({ ...smtp, port:Number(e.target.value) })} /></label>
-                  <label>用户名<input value={smtp.username} onChange={(e) => setSmtp({ ...smtp, username:e.target.value })} placeholder="name@example.com" /></label>
-                  <label>密码<input type="password" value={smtp.password} onChange={(e) => setSmtp({ ...smtp, password:e.target.value })} placeholder={smtp.hasPassword ? "已保存；留空继续使用原密码" : "请输入 SMTP 密码"} /></label>
-                  <label>发件人<input value={smtp.mailFrom} onChange={(e) => setSmtp({ ...smtp, mailFrom:e.target.value })} placeholder="GTD Flow <name@example.com>" /></label>
-                  <div className="setting-row"><div><strong>SSL/TLS 直连</strong><span>通常仅 465 端口启用；587 使用 STARTTLS 时关闭</span></div><button className={smtp.secure ? "primary" : "test-connection"} onClick={() => setSmtp({ ...smtp, secure:!smtp.secure })}>{smtp.secure ? "已启用" : "未启用"}</button></div>
+                  <div className="segmented">
+                    <button className={mail.provider === "smtp" ? "active" : ""} onClick={() => mail.provider !== "smtp" && setMail({ ...mail, provider:"smtp", secret:"", hasSecret:false })}>SMTP</button>
+                    <button className={mail.provider === "resend" ? "active" : ""} onClick={() => mail.provider !== "resend" && setMail({ ...mail, provider:"resend", secret:"", hasSecret:false })}>Resend API</button>
+                  </div>
+                  {mail.provider === "smtp" ? (<>
+                    <label>SMTP 主机<input value={mail.host} onChange={(e) => setMail({ ...mail, host:e.target.value })} placeholder="smtp.example.com" /></label>
+                    <label>端口<input type="number" min={1} max={65535} value={mail.port} onChange={(e) => setMail({ ...mail, port:Number(e.target.value) })} /></label>
+                    <label>用户名<input value={mail.username} onChange={(e) => setMail({ ...mail, username:e.target.value })} placeholder="name@example.com" /></label>
+                    <label>密码<input type="password" value={mail.secret} onChange={(e) => setMail({ ...mail, secret:e.target.value })} placeholder={mail.hasSecret ? "已保存；留空继续使用原密码" : "请输入 SMTP 密码"} /></label>
+                    <div className="setting-row"><div><strong>SSL/TLS 直连</strong><span>通常仅 465 端口启用；587 使用 STARTTLS 时关闭</span></div><button className={mail.secure ? "primary" : "test-connection"} onClick={() => setMail({ ...mail, secure:!mail.secure })}>{mail.secure ? "已启用" : "未启用"}</button></div>
+                  </>) : (<>
+                    <label>API Base URL<input value={mail.apiBaseUrl} onChange={(e) => setMail({ ...mail, apiBaseUrl:e.target.value })} placeholder="https://api.resend.com" /></label>
+                    <label>API Key<input type="password" value={mail.secret} onChange={(e) => setMail({ ...mail, secret:e.target.value })} placeholder={mail.hasSecret ? "已保存；留空继续使用原密钥" : "re_xxxxxxxxx"} /></label>
+                    <p className="settings-note">需先在 Resend 验证发件域名；也支持兼容 Resend Send Email API 的公开 HTTPS 地址。</p>
+                  </>)}
+                  <label>发件人<input value={mail.mailFrom} onChange={(e) => setMail({ ...mail, mailFrom:e.target.value })} placeholder="GTD Flow <name@example.com>" /></label>
                   {smtpMessage && <div className={`settings-message ${smtpState}`}>{smtpMessage}</div>}
-                  <div className="settings-actions"><button className="test-connection" onClick={testSmtp} disabled={!smtp.hasPassword || smtpState === "testing" || smtpState === "saving"}>{smtpState === "testing" ? "发送中…" : "发送测试邮件"}</button><button className="primary" onClick={saveSmtp} disabled={smtpState === "saving"}>{smtpState === "saving" ? "保存中…" : "保存邮件配置"}</button></div>
-                  <p className="security-note">SMTP 密码只发送到服务端并加密存储，浏览器不会读取已保存的原始密码。</p>
+                  <div className="settings-actions"><button className="test-connection" onClick={testSmtp} disabled={!mail.hasSecret || smtpState === "testing" || smtpState === "saving"}>{smtpState === "testing" ? "发送中…" : "发送测试邮件"}</button><button className="primary" onClick={saveSmtp} disabled={smtpState === "saving"}>{smtpState === "saving" ? "保存中…" : "保存邮件配置"}</button></div>
+                  <p className="security-note">SMTP 密码或 API Key 只发送到服务端并加密存储，浏览器不会读取已保存的原始密钥。</p>
                 </div>
               </section>
             )}

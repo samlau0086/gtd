@@ -1,53 +1,91 @@
+import { randomUUID } from "node:crypto";
 import nodemailer from "nodemailer";
 import { query } from "../../../db/binding";
-import { decryptSecret } from "./crypto";
+import { assertPublicEndpoint, decryptSecret, validateBaseUrl } from "./crypto";
 
-export type SmtpConfig = {
+type SmtpEmailConfig = {
+  provider: "smtp";
   host: string;
   port: number;
   username: string;
-  password: string;
+  secret: string;
   mailFrom: string;
   secure: boolean;
 };
 
-type StoredSmtpConfig = {
+type ResendEmailConfig = {
+  provider: "resend";
+  apiBaseUrl: string;
+  secret: string;
+  mailFrom: string;
+};
+
+export type EmailConfig = SmtpEmailConfig | ResendEmailConfig;
+
+type StoredEmailConfig = {
+  provider: "smtp" | "resend";
   host: string;
   port: number;
   username: string;
   encrypted_password: string;
   mail_from: string;
   secure: boolean;
+  api_base_url: string;
 };
 
-export async function getSmtpConfig(): Promise<SmtpConfig | null> {
-  const result = await query<StoredSmtpConfig>(
-    "SELECT host,port,username,encrypted_password,mail_from,secure FROM smtp_configs WHERE id=1",
+export async function getEmailConfig(): Promise<EmailConfig | null> {
+  const result = await query<StoredEmailConfig>(
+    "SELECT provider,host,port,username,encrypted_password,mail_from,secure,api_base_url FROM smtp_configs WHERE id=1",
   );
   const row = result.rows[0];
   if (!row) return null;
+  const secret = await decryptSecret(row.encrypted_password);
+  if (row.provider === "resend") {
+    return { provider: "resend", apiBaseUrl: row.api_base_url, secret, mailFrom: row.mail_from };
+  }
   return {
+    provider: "smtp",
     host: row.host,
     port: row.port,
     username: row.username,
-    password: await decryptSecret(row.encrypted_password),
+    secret,
     mailFrom: row.mail_from,
     secure: row.secure,
   };
 }
 
-export async function sendMail(config: SmtpConfig, to: string, subject: string, text: string, html?: string) {
-  const transport = nodemailer.createTransport({
-    host: config.host,
-    port: config.port,
-    secure: config.secure,
-    auth: config.username ? { user: config.username, pass: config.password } : undefined,
+export async function sendMail(config: EmailConfig, to: string, subject: string, text: string, html?: string) {
+  if (config.provider === "smtp") {
+    const transport = nodemailer.createTransport({
+      host: config.host,
+      port: config.port,
+      secure: config.secure,
+      auth: config.username ? { user: config.username, pass: config.secret } : undefined,
+    });
+    await transport.sendMail({ from: config.mailFrom, to, subject, text, html });
+    return;
+  }
+
+  const baseUrl = validateBaseUrl(config.apiBaseUrl);
+  await assertPublicEndpoint(baseUrl);
+  const response = await fetch(`${baseUrl}/emails`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${config.secret}`,
+      "Content-Type": "application/json",
+      "Idempotency-Key": randomUUID(),
+    },
+    body: JSON.stringify({ from: config.mailFrom, to: [to], subject, text, html }),
+    signal: AbortSignal.timeout(15_000),
   });
-  await transport.sendMail({ from: config.mailFrom, to, subject, text, html });
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as { message?: string; error?: { message?: string } } | null;
+    throw new Error(payload?.message || payload?.error?.message || `Resend API 请求失败 (${response.status})`);
+  }
 }
 
 export async function sendOtpEmail(email: string, code: string) {
-  const config = await getSmtpConfig();
+  const config = await getEmailConfig();
   if (!config) throw new Error("请先由管理员在网页后台配置邮件服务");
   await sendMail(
     config,

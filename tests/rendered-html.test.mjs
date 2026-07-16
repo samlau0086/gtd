@@ -95,3 +95,21 @@ test("ships guarded GitHub Actions deployment to VPS", async () => {
   assert.match(compose, /pgvector\/pgvector:pg16/);
   assert.match(compose, /APP_IMAGE/);
 });
+
+test("supports encrypted SMTP and Resend email providers", async () => {
+  const [app, mail, config, migration] = await Promise.all([
+    readFile(new URL("../app/GTDApp.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/_lib/mail.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/admin/mail/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../postgres/migrations/004_email_providers.sql", import.meta.url), "utf8"),
+  ]);
+  assert.match(app, /Resend API/);
+  assert.match(app, /api\/admin\/mail/);
+  assert.match(mail, /Authorization: `Bearer/);
+  assert.match(mail, /Idempotency-Key/);
+  assert.match(mail, /assertPublicEndpoint/);
+  assert.match(config, /encryptSecret/);
+  assert.match(config, /existing\.rows\[0\]\?\.provider === provider/);
+  assert.doesNotMatch(config, /decryptSecret/);
+  assert.match(migration, /provider IN \('smtp', 'resend'\)/);
+});
