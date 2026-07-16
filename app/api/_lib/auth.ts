@@ -23,6 +23,14 @@ export async function requireUser(request: Request): Promise<AuthUser> {
   return user;
 }
 
+export async function requireAdmin(request: Request): Promise<AuthUser> {
+  const user = await requireUser(request);
+  const adminEmail = (process.env.ADMIN_EMAIL || "").trim().toLowerCase();
+  if (!adminEmail || user.email.toLowerCase() !== adminEmail)
+    throw new Response("Forbidden", { status: 403 });
+  return user;
+}
+
 export function authError(error: unknown) {
   if (error instanceof Response) return error;
   console.error("API request failed", error instanceof Error ? error.message : "unknown");

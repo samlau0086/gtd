@@ -20,24 +20,21 @@ jobs:
     timeout-minutes: 30
     environment:
       name: production
-      url: https://${{ vars.DOMAIN }}
     env:
-      VPS_HOST: ${{ vars.VPS_HOST }}
+      VPS_HOST: ${{ secrets.VPS_HOST }}
       VPS_PORT: ${{ vars.VPS_PORT || '22' }}
-      VPS_USER: ${{ vars.VPS_USER }}
+      VPS_USER: ${{ secrets.VPS_USER }}
       DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/opt/gtd-flow' }}
-      DOMAIN: ${{ vars.DOMAIN }}
+      DOMAIN: ${{ secrets.DOMAIN }}
       POSTGRES_DB: ${{ vars.POSTGRES_DB || 'gtdflow' }}
       POSTGRES_USER: ${{ vars.POSTGRES_USER || 'gtdflow' }}
       DB_POOL_SIZE: ${{ vars.DB_POOL_SIZE || '10' }}
-      SMTP_HOST: ${{ vars.SMTP_HOST }}
-      SMTP_PORT: ${{ vars.SMTP_PORT || '587' }}
-      SMTP_USER: ${{ vars.SMTP_USER }}
-      MAIL_FROM: ${{ vars.MAIL_FROM }}
+      APP_PORT: ${{ vars.APP_PORT || '3300' }}
       POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
       AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
       AI_ENCRYPTION_KEY: ${{ secrets.AI_ENCRYPTION_KEY }}
-      SMTP_PASS: ${{ secrets.SMTP_PASS }}
+      BOOTSTRAP_TOKEN: ${{ secrets.BOOTSTRAP_TOKEN }}
+      ADMIN_EMAIL: ${{ secrets.ADMIN_EMAIL }}
 
     steps:
       - name: Check out source
@@ -55,9 +52,8 @@ jobs:
           import os
           import re
           required = [
-              "VPS_HOST", "VPS_USER", "DOMAIN", "SMTP_HOST", "SMTP_USER",
-              "MAIL_FROM", "POSTGRES_PASSWORD", "AUTH_SECRET",
-              "AI_ENCRYPTION_KEY", "SMTP_PASS", "VPS_SSH_PRIVATE_KEY",
+              "VPS_HOST", "VPS_USER", "DOMAIN", "POSTGRES_PASSWORD", "AUTH_SECRET",
+              "AI_ENCRYPTION_KEY", "BOOTSTRAP_TOKEN", "ADMIN_EMAIL", "VPS_SSH_PRIVATE_KEY",
               "VPS_HOST_KEY",
           ]
           missing = [name for name in required if not os.environ.get(name)]
@@ -83,7 +79,7 @@ jobs:
               raise SystemExit("Invalid GitHub variable format: " + ", ".join(invalid))
           if not 1 <= int(os.environ["VPS_PORT"]) <= 65535:
               raise SystemExit("VPS_PORT must be between 1 and 65535")
-          runtime_secrets = ["POSTGRES_PASSWORD", "AUTH_SECRET", "AI_ENCRYPTION_KEY", "SMTP_PASS"]
+          runtime_secrets = ["POSTGRES_PASSWORD", "AUTH_SECRET", "AI_ENCRYPTION_KEY", "BOOTSTRAP_TOKEN", "ADMIN_EMAIL"]
           if any(any(character in os.environ[name] for character in ["\n", "\r", "\\", "'"]) for name in runtime_secrets):
               raise SystemExit("Runtime secrets cannot contain newlines, backslashes, or single quotes")
           PY
@@ -139,10 +135,9 @@ jobs:
           import os
 
           keys = [
-              "APP_IMAGE", "DOMAIN", "POSTGRES_DB", "POSTGRES_USER",
+              "APP_IMAGE", "DOMAIN", "APP_PORT", "POSTGRES_DB", "POSTGRES_USER",
               "POSTGRES_PASSWORD", "DB_POOL_SIZE", "AUTH_SECRET",
-              "AI_ENCRYPTION_KEY", "SMTP_HOST", "SMTP_PORT", "SMTP_USER",
-              "SMTP_PASS", "MAIL_FROM",
+              "AI_ENCRYPTION_KEY", "BOOTSTRAP_TOKEN", "ADMIN_EMAIL",
           ]
 
           def quote(value: str) -> str:
@@ -164,12 +159,27 @@ jobs:
           printf '%s\n' "$VPS_HOST_KEY" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/id_deploy" "$HOME/.ssh/known_hosts"
 
+      - name: Prepare VPS runtime
+        run: |
+          ssh -i "$HOME/.ssh/id_deploy" -p "$VPS_PORT" \
+            -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            "$VPS_USER@$VPS_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          if ! command -v docker >/dev/null 2>&1; then
+            export DEBIAN_FRONTEND=noninteractive
+            curl -fsSL https://get.docker.com | sh
+          fi
+          docker compose version
+          systemctl enable --now docker 2>/dev/null || true
+          REMOTE
+
       - name: Upload deployment files
         run: |
           SSH=(ssh -i "$HOME/.ssh/id_deploy" -p "$VPS_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes)
           SCP=(scp -i "$HOME/.ssh/id_deploy" -P "$VPS_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes)
           "${SSH[@]}" "$VPS_USER@$VPS_HOST" "mkdir -p '$DEPLOY_PATH'"
-          "${SCP[@]}" docker-compose.prod.yml Caddyfile "$VPS_USER@$VPS_HOST:$DEPLOY_PATH/"
+          "${SCP[@]}" docker-compose.prod.yml "$VPS_USER@$VPS_HOST:$DEPLOY_PATH/"
+          "${SCP[@]}" deploy/openresty.conf "$VPS_USER@$VPS_HOST:$DEPLOY_PATH/openresty.conf.template"
           "${SCP[@]}" .env.production "$VPS_USER@$VPS_HOST:$DEPLOY_PATH/.env.next"
 
       - name: Authenticate VPS to GHCR
@@ -187,10 +197,11 @@ jobs:
           ssh -i "$HOME/.ssh/id_deploy" -p "$VPS_PORT" \
             -o BatchMode=yes -o StrictHostKeyChecking=yes \
             "$VPS_USER@$VPS_HOST" \
-            "bash -s -- '$DEPLOY_PATH' '$DOMAIN'" <<'REMOTE'
+            "bash -s -- '$DEPLOY_PATH' '$DOMAIN' '$APP_PORT'" <<'REMOTE'
           set -Eeuo pipefail
           DEPLOY_PATH="$1"
           DOMAIN="$2"
+          APP_PORT="$3"
           cd "$DEPLOY_PATH"
 
           if [ -f .env.production ]; then
@@ -207,7 +218,7 @@ jobs:
             echo "Deployment health check failed; attempting rollback."
             if [ -f .env.previous ]; then
               mv .env.previous .env.production
-              compose up -d --no-build app caddy
+              compose up -d --no-build app
             fi
           }
           trap rollback ERR
@@ -215,9 +226,19 @@ jobs:
           compose pull app
           compose up -d --remove-orphans
 
+          OPENRESTY_CONF=/opt/1panel/www/conf.d/gtd-flow.conf
+          sed -e "s/__DOMAIN__/$DOMAIN/g" -e "s/__APP_PORT__/$APP_PORT/g" openresty.conf.template > "$OPENRESTY_CONF.next"
+          docker exec 1Panel-openresty-IsWp openresty -t
+          mv "$OPENRESTY_CONF.next" "$OPENRESTY_CONF"
+          if ! docker exec 1Panel-openresty-IsWp openresty -t; then
+            rm -f "$OPENRESTY_CONF"
+            exit 1
+          fi
+          docker exec 1Panel-openresty-IsWp openresty -s reload
+
           healthy=false
           for attempt in $(seq 1 30); do
-            if curl --fail --silent --show-error "https://$DOMAIN/api/health" | grep -q '"ok":true'; then
+            if curl --fail --silent --show-error "http://127.0.0.1:$APP_PORT/api/health" | grep -q '"ok":true'; then
               healthy=true
               break
             fi

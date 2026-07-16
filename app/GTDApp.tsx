@@ -40,8 +40,8 @@ type DraftItem = {
   dueDate?: string;
   dependsOn: string[];
 };
-type AuthConfig = { mode: "self-hosted" };
-type SettingsTab = "general" | "ai" | "account" | "data";
+type AuthConfig = { mode: "self-hosted"; setupRequired?: boolean };
+type SettingsTab = "general" | "smtp" | "ai" | "account" | "data";
 type UserPreferences = {
   defaultView: ViewKey;
   weekStartsOn: "monday" | "sunday";
@@ -230,19 +230,33 @@ const NAV: Array<{ key: ViewKey; icon: string; label: string }> = [
 
 function AuthScreen({
   onSession,
+  setupRequired,
 }: {
-  onSession: (token: string, email: string) => void;
+  onSession: (token: string, email: string, openSmtp?: boolean) => void;
+  setupRequired: boolean;
 }) {
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [bootstrapToken, setBootstrapToken] = useState("");
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setBusy(true);
     setMessage("");
     try {
+      if (setupRequired) {
+        const response = await fetch("/api/auth/bootstrap", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, token: bootstrapToken }),
+        });
+        const data = (await response.json()) as { accessToken?: string; user?: { email?: string }; error?: string };
+        if (!response.ok || !data.accessToken) throw new Error(data.error || "初始化登录失败");
+        onSession(data.accessToken, data.user?.email || email, true);
+        return;
+      }
       if (!sent) {
         const response = await fetch("/api/auth/request-otp", {
           method: "POST",
@@ -286,7 +300,14 @@ function AuthScreen({
         </h1>
         <p>收集想法、安排时间，让 AI 帮你拆解真正可执行的行动。</p>
         <form onSubmit={submit}>
-          {!sent ? (
+          {setupRequired ? (
+            <>
+              <label>管理员邮箱</label>
+              <input autoFocus type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="admin@example.com" />
+              <label>首次部署令牌</label>
+              <input type="password" required value={bootstrapToken} onChange={(e) => setBootstrapToken(e.target.value)} placeholder="GitHub Secret: BOOTSTRAP_TOKEN" />
+            </>
+          ) : !sent ? (
             <>
               <label>工作邮箱</label>
               <input
@@ -324,7 +345,7 @@ function AuthScreen({
             </>
           )}
           <button className="primary auth-submit" disabled={busy}>
-            {busy ? "请稍候…" : sent ? "进入 GTD Flow" : "发送验证码"}
+            {busy ? "请稍候…" : setupRequired ? "进入后台配置邮件" : sent ? "进入 GTD Flow" : "发送验证码"}
           </button>
           {message && <div className="auth-message">{message}</div>}
         </form>
@@ -1235,6 +1256,7 @@ function SettingsDrawer({
   onPreferencesChange,
   onClose,
   onSignOut,
+  initialTab,
 }: {
   token: string;
   email: string;
@@ -1244,8 +1266,12 @@ function SettingsDrawer({
   onPreferencesChange: (value: UserPreferences) => void;
   onClose: () => void;
   onSignOut: () => void;
+  initialTab?: SettingsTab;
 }) {
-  const [tab, setTab] = useState<SettingsTab>("general");
+  const [tab, setTab] = useState<SettingsTab>(initialTab || "general");
+  const [smtp, setSmtp] = useState({ host:"", port:587, username:"", password:"", mailFrom:"", secure:false, hasPassword:false });
+  const [smtpState, setSmtpState] = useState<"idle"|"loading"|"saving"|"testing"|"saved"|"error">("idle");
+  const [smtpMessage, setSmtpMessage] = useState("");
   const [config, setConfig] = useState({
     baseUrl: "https://api.openai.com/v1",
     model: "gpt-4.1-mini",
@@ -1294,6 +1320,41 @@ function SettingsDrawer({
         setAiMessage(error instanceof Error ? error.message : "读取配置失败");
       });
   }, [token]);
+
+  useEffect(() => {
+    if (!token) return;
+    setSmtpState("loading");
+    fetch("/api/admin/smtp", { headers:{ Authorization:`Bearer ${token}` } })
+      .then(async (response) => {
+        if (response.status === 403) { setSmtpState("idle"); return; }
+        const data = await response.json();
+        if (!response.ok) throw new Error(data?.error || "读取邮件配置失败");
+        if (data) setSmtp((current) => ({ ...current, ...data, password:"" }));
+        setSmtpState("idle");
+      })
+      .catch((error) => { setSmtpState("error"); setSmtpMessage(error instanceof Error ? error.message : "读取邮件配置失败"); });
+  }, [token]);
+
+  const saveSmtp = async () => {
+    setSmtpState("saving"); setSmtpMessage("");
+    try {
+      const response = await fetch("/api/admin/smtp", { method:"PUT", headers:{ "Content-Type":"application/json", Authorization:`Bearer ${token}` }, body:JSON.stringify(smtp) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "保存失败");
+      setSmtp((current) => ({ ...current, ...data, password:"" }));
+      setSmtpState("saved"); setSmtpMessage("邮件服务已加密保存，现在可以使用邮箱验证码登录");
+    } catch (error) { setSmtpState("error"); setSmtpMessage(error instanceof Error ? error.message : "保存失败"); }
+  };
+
+  const testSmtp = async () => {
+    setSmtpState("testing"); setSmtpMessage("");
+    try {
+      const response = await fetch("/api/admin/smtp/test", { method:"POST", headers:{ Authorization:`Bearer ${token}` } });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "测试邮件发送失败");
+      setSmtpState("saved"); setSmtpMessage(`测试邮件已发送到 ${email}`);
+    } catch (error) { setSmtpState("error"); setSmtpMessage(error instanceof Error ? error.message : "测试失败"); }
+  };
 
   const saveAIConfig = async () => {
     if (!token) return;
@@ -1404,6 +1465,7 @@ function SettingsDrawer({
 
   const tabs: { key: SettingsTab; icon: string; label: string }[] = [
     { key: "general", icon: "◫", label: "通用" },
+    { key: "smtp", icon: "@", label: "邮件服务" },
     { key: "ai", icon: "✦", label: "AI 服务" },
     { key: "account", icon: "◎", label: "账号与同步" },
     { key: "data", icon: "⇩", label: "数据" },
@@ -1467,6 +1529,22 @@ function SettingsDrawer({
                   </div>
                 </div>
                 <p className="settings-note">偏好会自动保存在当前设备。</p>
+              </section>
+            )}
+            {tab === "smtp" && (
+              <section className="settings-section">
+                <div className="settings-title"><h3>邮件服务</h3><p>配置用于发送 6 位登录验证码的 SMTP 服务，仅管理员可访问。</p></div>
+                <div className="ai-settings-card">
+                  <label>SMTP 主机<input value={smtp.host} onChange={(e) => setSmtp({ ...smtp, host:e.target.value })} placeholder="smtp.example.com" /></label>
+                  <label>端口<input type="number" min={1} max={65535} value={smtp.port} onChange={(e) => setSmtp({ ...smtp, port:Number(e.target.value) })} /></label>
+                  <label>用户名<input value={smtp.username} onChange={(e) => setSmtp({ ...smtp, username:e.target.value })} placeholder="name@example.com" /></label>
+                  <label>密码<input type="password" value={smtp.password} onChange={(e) => setSmtp({ ...smtp, password:e.target.value })} placeholder={smtp.hasPassword ? "已保存；留空继续使用原密码" : "请输入 SMTP 密码"} /></label>
+                  <label>发件人<input value={smtp.mailFrom} onChange={(e) => setSmtp({ ...smtp, mailFrom:e.target.value })} placeholder="GTD Flow <name@example.com>" /></label>
+                  <div className="setting-row"><div><strong>SSL/TLS 直连</strong><span>通常仅 465 端口启用；587 使用 STARTTLS 时关闭</span></div><button className={smtp.secure ? "primary" : "test-connection"} onClick={() => setSmtp({ ...smtp, secure:!smtp.secure })}>{smtp.secure ? "已启用" : "未启用"}</button></div>
+                  {smtpMessage && <div className={`settings-message ${smtpState}`}>{smtpMessage}</div>}
+                  <div className="settings-actions"><button className="test-connection" onClick={testSmtp} disabled={!smtp.hasPassword || smtpState === "testing" || smtpState === "saving"}>{smtpState === "testing" ? "发送中…" : "发送测试邮件"}</button><button className="primary" onClick={saveSmtp} disabled={smtpState === "saving"}>{smtpState === "saving" ? "保存中…" : "保存邮件配置"}</button></div>
+                  <p className="security-note">SMTP 密码只发送到服务端并加密存储，浏览器不会读取已保存的原始密码。</p>
+                </div>
               </section>
             )}
             {tab === "ai" && (
@@ -1542,6 +1620,7 @@ export function GTDApp() {
   const [projectFilter, setProjectFilter] = useState<string>();
   const [aiTask, setAiTask] = useState<Task>();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTab>("general");
   const [preferences, setPreferences] = useState<UserPreferences>(() => ({
     defaultView: "today",
     weekStartsOn: "monday",
@@ -1846,11 +1925,12 @@ export function GTDApp() {
     setState({ ...state, tasks: [...state.tasks, child] });
     setSubtaskTitle("");
   };
-  const signIn = (value: string, userEmail: string) => {
+  const signIn = (value: string, userEmail: string, openSmtp = false) => {
     localStorage.setItem("gtdflow-token", value);
     localStorage.setItem("gtdflow-email", userEmail);
     setToken(value);
     setEmail(userEmail);
+    if (openSmtp) { setSettingsInitialTab("smtp"); setSettingsOpen(true); }
   };
   if (authConfig === undefined)
     return (
@@ -1868,7 +1948,7 @@ export function GTDApp() {
       </main>
     );
   if (!token)
-    return <AuthScreen onSession={signIn} />;
+    return <AuthScreen onSession={signIn} setupRequired={Boolean(authConfig.setupRequired)} />;
   if (!ready)
     return (
       <main className="loading">
@@ -2425,6 +2505,7 @@ export function GTDApp() {
           onPreferencesChange={updatePreferences}
           onClose={() => setSettingsOpen(false)}
           onSignOut={signOut}
+          initialTab={settingsInitialTab}
         />
       )}
     </main>
