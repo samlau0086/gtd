@@ -1,0 +1,71 @@
+name: gtd-flow
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-gtdflow}
+      POSTGRES_USER: ${POSTGRES_USER:-gtdflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-gtdflow} -d ${POSTGRES_DB:-gtdflow}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  app:
+    image: ${APP_IMAGE:?APP_IMAGE is required}
+    pull_policy: always
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGHOST: db
+      PGPORT: 5432
+      PGDATABASE: ${POSTGRES_DB:-gtdflow}
+      PGUSER: ${POSTGRES_USER:-gtdflow}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-10}
+      AUTH_SECRET: ${AUTH_SECRET:?AUTH_SECRET is required}
+      AI_ENCRYPTION_KEY: ${AI_ENCRYPTION_KEY:?AI_ENCRYPTION_KEY is required}
+      SMTP_HOST: ${SMTP_HOST:?SMTP_HOST is required}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:?SMTP_USER is required}
+      SMTP_PASS: ${SMTP_PASS:?SMTP_PASS is required}
+      MAIL_FROM: ${MAIL_FROM:?MAIL_FROM is required}
+    expose:
+      - "3000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      DOMAIN: ${DOMAIN:?DOMAIN is required}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  postgres_data:
+    name: gtd-flow-postgres
+  caddy_data:
+    name: gtd-flow-caddy-data
+  caddy_config:
+    name: gtd-flow-caddy-config

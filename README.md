@@ -26,6 +26,52 @@
 
 应用容器启动时会自动按顺序执行 `postgres/migrations/*.sql`，已执行记录保存在 `schema_migrations`。不要删除生产数据卷。
 
+## GitHub Actions 自动部署
+
+推送到 `main` 分支或手动运行 `Deploy to VPS` 工作流时，Actions 会：
+
+1. 构建生产镜像并推送到当前仓库的 GHCR。
+2. 通过 SSH 上传 `docker-compose.prod.yml`、`Caddyfile` 和运行环境文件。
+3. VPS 拉取指定提交对应的镜像，自动执行 PostgreSQL 迁移并更新服务。
+4. 检查公网 `/api/health`；失败时尝试恢复上一镜像。
+
+建议在仓库 `Settings → Environments` 创建 `production` 环境，并在该环境中配置以下内容。生产环境可额外启用审批和分支保护。
+
+### Secrets
+
+| 名称 | 内容 |
+| --- | --- |
+| `VPS_SSH_PRIVATE_KEY` | 专用部署用户的 SSH 私钥完整内容 |
+| `VPS_HOST_KEY` | 可信渠道取得的 VPS SSH host key，例如 `ssh-keyscan -p 22 your-vps.example.com` 的完整输出 |
+| `POSTGRES_PASSWORD` | PostgreSQL 强随机密码，推荐 `openssl rand -hex 32` |
+| `AUTH_SECRET` | 登录验证码签名密钥，至少 32 字符，推荐 `openssl rand -base64 48` |
+| `AI_ENCRYPTION_KEY` | AI 密钥加密主密钥，必须为 `openssl rand -base64 32` 的结果 |
+| `SMTP_PASS` | SMTP 密码或应用专用密码 |
+
+运行时 Secrets 请使用推荐命令生成的十六进制/Base64 值，不要包含换行、反斜杠或单引号。
+
+### Variables
+
+| 名称 | 示例 | 说明 |
+| --- | --- | --- |
+| `VPS_HOST` | `vps.example.com` | VPS 主机名或 IPv4 地址 |
+| `VPS_PORT` | `22` | SSH 端口，可省略 |
+| `VPS_USER` | `deploy` | 可运行 Docker 的非 root 部署用户 |
+| `DEPLOY_PATH` | `/opt/gtd-flow` | 部署目录，可省略 |
+| `DOMAIN` | `gtd.example.com` | 已解析到 VPS 的站点域名 |
+| `POSTGRES_DB` | `gtdflow` | 数据库名，可省略 |
+| `POSTGRES_USER` | `gtdflow` | 数据库用户，可省略 |
+| `DB_POOL_SIZE` | `10` | 应用连接池大小，可省略 |
+| `SMTP_HOST` | `smtp.example.com` | SMTP 服务器 |
+| `SMTP_PORT` | `587` | SMTP 端口，可省略 |
+| `SMTP_USER` | `mailer@example.com` | SMTP 用户名 |
+| `MAIL_FROM` | `GTD Flow <mailer@example.com>` | 发件人 |
+| `DOCKER_PLATFORM` | `linux/amd64` | VPS 为 ARM 时改成 `linux/arm64` |
+
+VPS 首次准备只需要安装 Docker Engine 与 Compose 插件，将部署用户加入 `docker` 组，并确保其能写入 `DEPLOY_PATH`。80/443 端口必须能从公网访问。工作流使用仓库自带的 `GITHUB_TOKEN` 发布和拉取 GHCR 镜像，无需额外配置 Registry Token。
+
+Actions 依赖由 Dependabot 每周检查更新。
+
 ## 本地开发
 
 准备 PostgreSQL 并设置 `DATABASE_URL`、`AUTH_SECRET` 和 SMTP 环境变量，然后：

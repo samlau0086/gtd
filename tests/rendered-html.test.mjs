@@ -70,3 +70,20 @@ test("ships PostgreSQL, self-hosted auth and AI security boundaries", async () =
   assert.match(state, /WHERE user_id=\$1/);
   assert.match(state, /withTransaction/);
 });
+
+test("ships guarded GitHub Actions deployment to VPS", async () => {
+  const [workflow, compose] = await Promise.all([
+    readFile(new URL("../.github/workflows/deploy-vps.yml", import.meta.url), "utf8"),
+    readFile(new URL("../docker-compose.prod.yml", import.meta.url), "utf8"),
+  ]);
+  assert.match(workflow, /packages: write/);
+  assert.match(workflow, /docker\/build-push-action@v7/);
+  assert.match(workflow, /StrictHostKeyChecking=yes/);
+  assert.match(workflow, /VPS_HOST_KEY/);
+  assert.match(workflow, /\.env\.previous/);
+  assert.match(workflow, /api\/health/);
+  assert.doesNotMatch(workflow, /ssh-keyscan/);
+  assert.match(compose, /name: gtd-flow/);
+  assert.match(compose, /gtd-flow-postgres/);
+  assert.match(compose, /APP_IMAGE/);
+});

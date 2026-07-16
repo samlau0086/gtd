@@ -1,0 +1,232 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: gtd-flow-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  deploy:
+    name: Build, publish and deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: production
+      url: https://${{ vars.DOMAIN }}
+    env:
+      VPS_HOST: ${{ vars.VPS_HOST }}
+      VPS_PORT: ${{ vars.VPS_PORT || '22' }}
+      VPS_USER: ${{ vars.VPS_USER }}
+      DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/opt/gtd-flow' }}
+      DOMAIN: ${{ vars.DOMAIN }}
+      POSTGRES_DB: ${{ vars.POSTGRES_DB || 'gtdflow' }}
+      POSTGRES_USER: ${{ vars.POSTGRES_USER || 'gtdflow' }}
+      DB_POOL_SIZE: ${{ vars.DB_POOL_SIZE || '10' }}
+      SMTP_HOST: ${{ vars.SMTP_HOST }}
+      SMTP_PORT: ${{ vars.SMTP_PORT || '587' }}
+      SMTP_USER: ${{ vars.SMTP_USER }}
+      MAIL_FROM: ${{ vars.MAIL_FROM }}
+      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+      AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
+      AI_ENCRYPTION_KEY: ${{ secrets.AI_ENCRYPTION_KEY }}
+      SMTP_PASS: ${{ secrets.SMTP_PASS }}
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Validate deployment configuration
+        env:
+          VPS_SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          VPS_HOST_KEY: ${{ secrets.VPS_HOST_KEY }}
+        run: |
+          python3 - <<'PY'
+          import base64
+          import os
+          import re
+          required = [
+              "VPS_HOST", "VPS_USER", "DOMAIN", "SMTP_HOST", "SMTP_USER",
+              "MAIL_FROM", "POSTGRES_PASSWORD", "AUTH_SECRET",
+              "AI_ENCRYPTION_KEY", "SMTP_PASS", "VPS_SSH_PRIVATE_KEY",
+              "VPS_HOST_KEY",
+          ]
+          missing = [name for name in required if not os.environ.get(name)]
+          if missing:
+              raise SystemExit("Missing GitHub configuration: " + ", ".join(missing))
+          if len(os.environ["AUTH_SECRET"]) < 32:
+              raise SystemExit("AUTH_SECRET must contain at least 32 characters")
+          try:
+              key = base64.b64decode(os.environ["AI_ENCRYPTION_KEY"], validate=True)
+          except Exception as error:
+              raise SystemExit("AI_ENCRYPTION_KEY must be valid base64") from error
+          if len(key) != 32:
+              raise SystemExit("AI_ENCRYPTION_KEY must decode to exactly 32 bytes")
+          patterns = {
+              "VPS_HOST": r"^[A-Za-z0-9._-]+$",
+              "VPS_USER": r"^[A-Za-z_][A-Za-z0-9_-]*$",
+              "VPS_PORT": r"^[0-9]{1,5}$",
+              "DOMAIN": r"^[A-Za-z0-9.-]+$",
+              "DEPLOY_PATH": r"^/[A-Za-z0-9._/-]+$",
+          }
+          invalid = [name for name, pattern in patterns.items() if not re.fullmatch(pattern, os.environ[name])]
+          if invalid:
+              raise SystemExit("Invalid GitHub variable format: " + ", ".join(invalid))
+          if not 1 <= int(os.environ["VPS_PORT"]) <= 65535:
+              raise SystemExit("VPS_PORT must be between 1 and 65535")
+          runtime_secrets = ["POSTGRES_PASSWORD", "AUTH_SECRET", "AI_ENCRYPTION_KEY", "SMTP_PASS"]
+          if any(any(character in os.environ[name] for character in ["\n", "\r", "\\", "'"]) for name in runtime_secrets):
+              raise SystemExit("Runtime secrets cannot contain newlines, backslashes, or single quotes")
+          PY
+
+      - name: Resolve image name
+        id: image
+        run: |
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
+          echo "name=$IMAGE" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: Run application checks
+        run: |
+          npm ci
+          npx tsc --noEmit
+          node --test tests/rendered-html.test.mjs
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish application image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          platforms: ${{ vars.DOCKER_PLATFORM || 'linux/amd64' }}
+          tags: |
+            ${{ steps.image.outputs.name }}:${{ github.sha }}
+            ${{ steps.image.outputs.name }}:latest
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Create production environment file
+        env:
+          APP_IMAGE: ${{ steps.image.outputs.name }}:${{ github.sha }}
+        run: |
+          python3 - <<'PY'
+          import os
+
+          keys = [
+              "APP_IMAGE", "DOMAIN", "POSTGRES_DB", "POSTGRES_USER",
+              "POSTGRES_PASSWORD", "DB_POOL_SIZE", "AUTH_SECRET",
+              "AI_ENCRYPTION_KEY", "SMTP_HOST", "SMTP_PORT", "SMTP_USER",
+              "SMTP_PASS", "MAIL_FROM",
+          ]
+
+          def quote(value: str) -> str:
+              return "'" + value.replace("'", "\\'").replace('\n', '\\n') + "'"
+
+          with open(".env.production", "w", encoding="utf-8", newline="\n") as file:
+              for key in keys:
+                  file.write(f"{key}={quote(os.environ[key])}\n")
+          PY
+          chmod 600 .env.production
+
+      - name: Configure SSH
+        env:
+          VPS_SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          VPS_HOST_KEY: ${{ secrets.VPS_HOST_KEY }}
+        run: |
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$VPS_SSH_PRIVATE_KEY" > "$HOME/.ssh/id_deploy"
+          printf '%s\n' "$VPS_HOST_KEY" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/id_deploy" "$HOME/.ssh/known_hosts"
+
+      - name: Upload deployment files
+        run: |
+          SSH=(ssh -i "$HOME/.ssh/id_deploy" -p "$VPS_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes)
+          SCP=(scp -i "$HOME/.ssh/id_deploy" -P "$VPS_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes)
+          "${SSH[@]}" "$VPS_USER@$VPS_HOST" "mkdir -p '$DEPLOY_PATH'"
+          "${SCP[@]}" docker-compose.prod.yml Caddyfile "$VPS_USER@$VPS_HOST:$DEPLOY_PATH/"
+          "${SCP[@]}" .env.production "$VPS_USER@$VPS_HOST:$DEPLOY_PATH/.env.next"
+
+      - name: Authenticate VPS to GHCR
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf '%s' "$GHCR_TOKEN" | ssh \
+            -i "$HOME/.ssh/id_deploy" -p "$VPS_PORT" \
+            -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            "$VPS_USER@$VPS_HOST" \
+            "docker login ghcr.io -u '$GITHUB_ACTOR' --password-stdin"
+
+      - name: Deploy and verify
+        run: |
+          ssh -i "$HOME/.ssh/id_deploy" -p "$VPS_PORT" \
+            -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            "$VPS_USER@$VPS_HOST" \
+            "bash -s -- '$DEPLOY_PATH' '$DOMAIN'" <<'REMOTE'
+          set -Eeuo pipefail
+          DEPLOY_PATH="$1"
+          DOMAIN="$2"
+          cd "$DEPLOY_PATH"
+
+          if [ -f .env.production ]; then
+            cp .env.production .env.previous
+          fi
+          mv .env.next .env.production
+          chmod 600 .env.production
+
+          compose() {
+            docker compose --env-file .env.production -f docker-compose.prod.yml "$@"
+          }
+
+          rollback() {
+            echo "Deployment health check failed; attempting rollback."
+            if [ -f .env.previous ]; then
+              mv .env.previous .env.production
+              compose up -d --no-build app caddy
+            fi
+          }
+          trap rollback ERR
+
+          compose pull app
+          compose up -d --remove-orphans
+
+          healthy=false
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error "https://$DOMAIN/api/health" | grep -q '"ok":true'; then
+              healthy=true
+              break
+            fi
+            sleep 5
+          done
+          [ "$healthy" = true ]
+
+          trap - ERR
+          rm -f .env.previous
+          docker image prune -f --filter "until=168h"
+          compose ps
+          REMOTE
