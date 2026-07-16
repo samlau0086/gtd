@@ -41,6 +41,12 @@ type DraftItem = {
   dependsOn: string[];
 };
 type AuthConfig = { url: string; key: string };
+type SettingsTab = "general" | "ai" | "account" | "data";
+type UserPreferences = {
+  defaultView: ViewKey;
+  weekStartsOn: "monday" | "sunday";
+  density: "comfortable" | "compact";
+};
 type ViewKey =
   | "inbox"
   | "today"
@@ -1187,6 +1193,272 @@ function AIModal({
   );
 }
 
+function SettingsDrawer({
+  token,
+  email,
+  sync,
+  preferences,
+  state,
+  onPreferencesChange,
+  onClose,
+  onSignOut,
+}: {
+  token: string;
+  email: string;
+  sync: "saved" | "saving" | "error";
+  preferences: UserPreferences;
+  state: AppState;
+  onPreferencesChange: (value: UserPreferences) => void;
+  onClose: () => void;
+  onSignOut: () => void;
+}) {
+  const [tab, setTab] = useState<SettingsTab>("general");
+  const [config, setConfig] = useState({
+    baseUrl: "https://api.openai.com/v1",
+    model: "gpt-4.1-mini",
+    apiKey: "",
+    hasKey: false,
+  });
+  const [aiState, setAiState] = useState<
+    "idle" | "loading" | "saving" | "saved" | "error"
+  >("idle");
+  const [aiMessage, setAiMessage] = useState("");
+
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [onClose]);
+
+  useEffect(() => {
+    if (!token) return;
+    setAiState("loading");
+    fetch("/api/ai/config", {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(async (response) => {
+        const data = (await response.json()) as {
+          baseUrl?: string;
+          model?: string;
+          hasKey?: boolean;
+          error?: string;
+        } | null;
+        if (!response.ok) throw new Error(data?.error || "读取配置失败");
+        if (data) {
+          setConfig({
+            baseUrl: data.baseUrl || "https://api.openai.com/v1",
+            model: data.model || "gpt-4.1-mini",
+            apiKey: "",
+            hasKey: Boolean(data.hasKey),
+          });
+        }
+        setAiState("idle");
+      })
+      .catch((error) => {
+        setAiState("error");
+        setAiMessage(error instanceof Error ? error.message : "读取配置失败");
+      });
+  }, [token]);
+
+  const saveAIConfig = async () => {
+    if (!token) return;
+    setAiState("saving");
+    setAiMessage("");
+    try {
+      const response = await fetch("/api/ai/config", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          baseUrl: config.baseUrl,
+          model: config.model,
+          apiKey: config.apiKey,
+        }),
+      });
+      const data = (await response.json()) as {
+        baseUrl?: string;
+        model?: string;
+        hasKey?: boolean;
+        error?: string;
+      };
+      if (!response.ok) throw new Error(data.error || "保存失败");
+      setConfig((current) => ({
+        ...current,
+        baseUrl: data.baseUrl || current.baseUrl,
+        model: data.model || current.model,
+        apiKey: "",
+        hasKey: Boolean(data.hasKey),
+      }));
+      setAiState("saved");
+      setAiMessage("AI 配置已安全保存");
+    } catch (error) {
+      setAiState("error");
+      setAiMessage(error instanceof Error ? error.message : "保存失败");
+    }
+  };
+
+  const deleteAIConfig = async () => {
+    if (!token || !confirm("删除已保存的 AI 配置？删除后需重新填写密钥。"))
+      return;
+    setAiState("saving");
+    try {
+      const response = await fetch("/api/ai/config", {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error("删除失败");
+      setConfig({
+        baseUrl: "https://api.openai.com/v1",
+        model: "gpt-4.1-mini",
+        apiKey: "",
+        hasKey: false,
+      });
+      setAiState("saved");
+      setAiMessage("AI 配置已删除");
+    } catch (error) {
+      setAiState("error");
+      setAiMessage(error instanceof Error ? error.message : "删除失败");
+    }
+  };
+
+  const exportData = () => {
+    const blob = new Blob([JSON.stringify(state, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `gtd-flow-${today()}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const tabs: { key: SettingsTab; icon: string; label: string }[] = [
+    { key: "general", icon: "◫", label: "通用" },
+    { key: "ai", icon: "✦", label: "AI 服务" },
+    { key: "account", icon: "◎", label: "账号与同步" },
+    { key: "data", icon: "⇩", label: "数据" },
+  ];
+
+  return (
+    <div className="settings-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <aside className="settings-drawer" aria-label="设置" role="dialog" aria-modal="true">
+        <header className="settings-header">
+          <div>
+            <span className="eyebrow">GTD FLOW</span>
+            <h2>设置</h2>
+          </div>
+          <button onClick={onClose} aria-label="关闭设置">×</button>
+        </header>
+        <div className="settings-layout">
+          <nav className="settings-nav" aria-label="设置分类">
+            {tabs.map((item) => (
+              <button
+                key={item.key}
+                className={tab === item.key ? "active" : ""}
+                onClick={() => setTab(item.key)}
+              >
+                <i>{item.icon}</i><span>{item.label}</span>
+              </button>
+            ))}
+          </nav>
+          <div className="settings-content">
+            {tab === "general" && (
+              <section className="settings-section">
+                <div className="settings-title">
+                  <h3>通用设置</h3>
+                  <p>调整 GTD Flow 在这台设备上的使用方式。</p>
+                </div>
+                <div className="setting-card">
+                  <div className="setting-row">
+                    <div><strong>默认首页</strong><span>每次打开时优先进入的视图</span></div>
+                    <div className="segmented">
+                      {([['today', '今天'], ['inbox', '收集箱'], ['next', '下一步']] as const).map(([value, label]) => (
+                        <button key={value} className={preferences.defaultView === value ? "active" : ""} onClick={() => onPreferencesChange({ ...preferences, defaultView: value })}>{label}</button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="setting-row">
+                    <div><strong>每周开始日</strong><span>影响日程与甘特视图的周边界</span></div>
+                    <div className="segmented">
+                      <button className={preferences.weekStartsOn === "monday" ? "active" : ""} onClick={() => onPreferencesChange({ ...preferences, weekStartsOn: "monday" })}>周一</button>
+                      <button className={preferences.weekStartsOn === "sunday" ? "active" : ""} onClick={() => onPreferencesChange({ ...preferences, weekStartsOn: "sunday" })}>周日</button>
+                    </div>
+                  </div>
+                  <div className="setting-row">
+                    <div><strong>界面密度</strong><span>紧凑模式可在同一屏展示更多任务</span></div>
+                    <div className="segmented">
+                      <button className={preferences.density === "comfortable" ? "active" : ""} onClick={() => onPreferencesChange({ ...preferences, density: "comfortable" })}>舒适</button>
+                      <button className={preferences.density === "compact" ? "active" : ""} onClick={() => onPreferencesChange({ ...preferences, density: "compact" })}>紧凑</button>
+                    </div>
+                  </div>
+                  <div className="setting-row static-row">
+                    <div><strong>时区</strong><span>任务日期按你的默认时区显示</span></div>
+                    <b>Asia/Shanghai</b>
+                  </div>
+                </div>
+                <p className="settings-note">偏好会自动保存在当前设备。</p>
+              </section>
+            )}
+            {tab === "ai" && (
+              <section className="settings-section">
+                <div className="settings-title">
+                  <h3>AI 服务</h3>
+                  <p>连接你自己的 OpenAI 兼容模型，用于自动拆分任务。</p>
+                </div>
+                {!token ? (
+                  <div className="settings-empty"><span>✦</span><strong>演示模式不保存模型密钥</strong><p>配置 Supabase 并登录账号后即可安全保存。</p></div>
+                ) : (
+                  <div className="ai-settings-card">
+                    <label>Base URL<input value={config.baseUrl} onChange={(event) => setConfig({ ...config, baseUrl: event.target.value })} placeholder="https://api.openai.com/v1" /></label>
+                    <label>模型名称<input value={config.model} onChange={(event) => setConfig({ ...config, model: event.target.value })} placeholder="gpt-4.1-mini" /></label>
+                    <label>
+                      API Key
+                      <input type="password" value={config.apiKey} onChange={(event) => setConfig({ ...config, apiKey: event.target.value })} placeholder={config.hasKey ? "已保存；留空则继续使用原密钥" : "输入新的 API Key"} />
+                    </label>
+                    <div className="key-status"><i className={config.hasKey ? "connected" : ""} /><span>{aiState === "loading" ? "正在读取配置…" : config.hasKey ? "密钥已加密保存" : "尚未保存密钥"}</span></div>
+                    {aiMessage && <div className={`settings-message ${aiState}`}>{aiMessage}</div>}
+                    <div className="settings-actions">
+                      {config.hasKey && <button className="danger-ghost" onClick={deleteAIConfig} disabled={aiState === "saving"}>删除配置</button>}
+                      <button className="primary" onClick={saveAIConfig} disabled={aiState === "saving" || aiState === "loading"}>{aiState === "saving" ? "保存中…" : "保存 AI 配置"}</button>
+                    </div>
+                    <p className="security-note">密钥只发送到服务端并加密存储，浏览器不会读取已保存的原始密钥。</p>
+                  </div>
+                )}
+              </section>
+            )}
+            {tab === "account" && (
+              <section className="settings-section">
+                <div className="settings-title"><h3>账号与同步</h3><p>查看当前账号及云端同步状态。</p></div>
+                <div className="account-card">
+                  <div className="account-avatar">{email[0]?.toUpperCase() || "G"}</div>
+                  <div><strong>{token ? email : "GTD Flow 演示"}</strong><span>{token ? "邮箱验证码登录" : "数据仅保存在当前浏览器"}</span></div>
+                  <em className={`sync-pill ${sync}`}>{sync === "saving" ? "同步中" : sync === "error" ? "同步异常" : token ? "已同步" : "本地模式"}</em>
+                </div>
+                {token && <button className="wide-secondary" onClick={onSignOut}>退出当前账号</button>}
+              </section>
+            )}
+            {tab === "data" && (
+              <section className="settings-section">
+                <div className="settings-title"><h3>数据</h3><p>获取当前项目、任务和标签的便携副本。</p></div>
+                <div className="data-card">
+                  <div><span>JSON</span><div><strong>导出全部数据</strong><p>{state.projects.length} 个项目 · {state.tasks.length} 个任务 · {state.tags.length} 个标签</p></div></div>
+                  <button onClick={exportData}>导出文件</button>
+                </div>
+                <p className="settings-note">导出不会删除或修改云端数据。</p>
+              </section>
+            )}
+          </div>
+        </div>
+      </aside>
+    </div>
+  );
+}
+
 export function GTDApp() {
   const [authConfig, setAuthConfig] = useState<AuthConfig | null | undefined>(
     undefined,
@@ -1203,6 +1475,12 @@ export function GTDApp() {
   const [quick, setQuick] = useState("");
   const [projectFilter, setProjectFilter] = useState<string>();
   const [aiTask, setAiTask] = useState<Task>();
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [preferences, setPreferences] = useState<UserPreferences>(() => ({
+    defaultView: "today",
+    weekStartsOn: "monday",
+    density: "comfortable",
+  }));
   const [navOpen, setNavOpen] = useState(false);
   const [sync, setSync] = useState<"saved" | "saving" | "error">("saved");
   const [subtaskTitle, setSubtaskTitle] = useState("");
@@ -1212,6 +1490,17 @@ export function GTDApp() {
       .then(async (response) => (await response.json()) as AuthConfig | null)
       .then((value) => setAuthConfig(value))
       .catch(() => setAuthConfig(null));
+  }, []);
+  useEffect(() => {
+    const stored = localStorage.getItem("gtdflow-preferences");
+    if (!stored) return;
+    try {
+      const next = JSON.parse(stored) as Partial<UserPreferences>;
+      setPreferences((current) => ({ ...current, ...next }));
+      if (next.defaultView) setView(next.defaultView);
+    } catch {
+      localStorage.removeItem("gtdflow-preferences");
+    }
   }, []);
   useEffect(() => {
     if (authConfig === undefined) return;
@@ -1528,8 +1817,18 @@ export function GTDApp() {
     : projectFilter
       ? state.projects.find((p) => p.id === projectFilter)?.name || "项目"
       : NAV.find((n) => n.key === view)?.label || "任务";
+  const updatePreferences = (value: UserPreferences) => {
+    setPreferences(value);
+    localStorage.setItem("gtdflow-preferences", JSON.stringify(value));
+  };
+  const signOut = () => {
+    localStorage.removeItem("gtdflow-token");
+    localStorage.removeItem("gtdflow-email");
+    setSettingsOpen(false);
+    setToken("");
+  };
   return (
-    <main className={`app-shell ${selected ? "detail-open" : ""}`}>
+    <main className={`app-shell ${selected ? "detail-open" : ""} density-${preferences.density}`}>
       <aside className={`sidebar ${navOpen ? "open" : ""}`}>
         <div className="account">
           <div className="avatar">{email[0]?.toUpperCase() || "G"}</div>
@@ -1637,13 +1936,7 @@ export function GTDApp() {
                 ? "同步失败"
                 : "✓ 已同步"}
           </span>
-          <button
-            onClick={() =>
-              alert(
-                "设置将在下一版加入独立页面。AI 配置可在任务的 AI 拆分流程中完成。",
-              )
-            }
-          >
+          <button onClick={() => setSettingsOpen(true)} aria-label="打开设置" title="设置">
             ⚙
           </button>
         </div>
@@ -2064,6 +2357,18 @@ export function GTDApp() {
             setAiTask(undefined);
             setMode("gantt");
           }}
+        />
+      )}
+      {settingsOpen && (
+        <SettingsDrawer
+          token={token}
+          email={email}
+          sync={sync}
+          preferences={preferences}
+          state={state}
+          onPreferencesChange={updatePreferences}
+          onClose={() => setSettingsOpen(false)}
+          onSignOut={signOut}
         />
       )}
     </main>
