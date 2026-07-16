@@ -398,15 +398,25 @@ type SelectOption = {
 
 function SelectPopover({
   value,
+  values = [],
   options,
   onChange,
+  onMultiChange,
   searchable = false,
+  multiple = false,
+  allowCreate = false,
+  searchPlaceholder = "搜索选项…",
   ariaLabel,
 }: {
   value: string;
+  values?: string[];
   options: SelectOption[];
   onChange: (value: string) => void;
+  onMultiChange?: (values: string[]) => void;
   searchable?: boolean;
+  multiple?: boolean;
+  allowCreate?: boolean;
+  searchPlaceholder?: string;
   ariaLabel: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -426,6 +436,21 @@ function SelectPopover({
   );
   const selected =
     options.find((option) => option.value === value) || options[0];
+  const selectedMany = options.filter((option) =>
+    values.includes(option.value),
+  );
+  const isSelected = (optionValue: string) =>
+    multiple
+      ? optionValue
+        ? values.includes(optionValue)
+        : values.length === 0
+      : optionValue === value;
+  const canCreate =
+    allowCreate &&
+    Boolean(query.trim()) &&
+    !options.some(
+      (option) => option.label.toLowerCase() === query.trim().toLowerCase(),
+    );
   const place = useCallback(() => {
     const rect = trigger.current?.getBoundingClientRect();
     if (!rect) return;
@@ -452,7 +477,7 @@ function SelectPopover({
     setActive(
       Math.max(
         0,
-        options.findIndex((option) => option.value === value),
+        options.findIndex((option) => isSelected(option.value)),
       ),
     );
     const outside = (event: PointerEvent) => {
@@ -471,7 +496,7 @@ function SelectPopover({
       window.removeEventListener("resize", update);
       document.removeEventListener("scroll", update, true);
     };
-  }, [open, options.length, place, value]);
+  }, [open, options.length, place, value, values.join("|")]);
   useEffect(() => {
     if (open && searchable)
       setTimeout(
@@ -480,6 +505,16 @@ function SelectPopover({
       );
   }, [open, searchable]);
   const choose = (next: string) => {
+    if (multiple && onMultiChange) {
+      if (!next) onMultiChange([]);
+      else
+        onMultiChange(
+          values.includes(next)
+            ? values.filter((item) => item !== next)
+            : [...values, next],
+        );
+      return;
+    }
     onChange(next);
     setOpen(false);
     trigger.current?.focus();
@@ -507,6 +542,9 @@ function SelectPopover({
     if (event.key === "Enter" && filtered[active]) {
       event.preventDefault();
       choose(filtered[active].value);
+    } else if (event.key === "Enter" && canCreate) {
+      event.preventDefault();
+      choose(query.trim());
     }
   };
   return (
@@ -522,9 +560,30 @@ function SelectPopover({
         onKeyDown={keydown}
       >
         <span className="select-value">
-          {selected?.color && <i style={{ background: selected.color }} />}
-          {selected?.icon && <b>{selected.icon}</b>}
-          <span>{selected?.label || "请选择"}</span>
+          {multiple && values.length > 1 ? (
+            <>
+              <b>✓</b>
+              <span>{values.length} 个前置任务</span>
+            </>
+          ) : (
+            <>
+              {(multiple ? selectedMany[0] : selected)?.color && (
+                <i
+                  style={{
+                    background: (multiple ? selectedMany[0] : selected)?.color,
+                  }}
+                />
+              )}
+              {(multiple ? selectedMany[0] : selected)?.icon && (
+                <b>{(multiple ? selectedMany[0] : selected)?.icon}</b>
+              )}
+              <span>
+                {(multiple ? selectedMany[0] : selected)?.label ||
+                  options[0]?.label ||
+                  "请选择"}
+              </span>
+            </>
+          )}
         </span>
         <em>⌄</em>
       </button>
@@ -545,13 +604,14 @@ function SelectPopover({
                     setQuery(event.target.value);
                     setActive(0);
                   }}
-                  placeholder="搜索任务…"
+                  placeholder={searchPlaceholder}
                 />
               </label>
             )}
             <div
               className="select-options"
               role="listbox"
+              aria-multiselectable={multiple || undefined}
               aria-label={ariaLabel}
             >
               {filtered.length ? (
@@ -559,9 +619,10 @@ function SelectPopover({
                   <button
                     type="button"
                     role="option"
-                    aria-selected={option.value === value}
-                    className={`${option.value === value ? "selected" : ""} ${index === active ? "active" : ""}`}
+                    aria-selected={isSelected(option.value)}
+                    className={`${isSelected(option.value) ? "selected" : ""} ${index === active ? "active" : ""}`}
                     key={option.value}
+                    title={option.label}
                     onMouseEnter={() => setActive(index)}
                     onClick={() => choose(option.value)}
                   >
@@ -575,11 +636,26 @@ function SelectPopover({
                         {option.meta && <small>{option.meta}</small>}
                       </span>
                     </span>
-                    {option.value === value && <em>✓</em>}
+                    {isSelected(option.value) && <em>✓</em>}
                   </button>
                 ))
-              ) : (
+              ) : !canCreate ? (
                 <div className="select-empty">没有匹配的任务</div>
+              ) : null}
+              {canCreate && (
+                <button
+                  type="button"
+                  className="select-create"
+                  onClick={() => choose(query.trim())}
+                >
+                  <span className="option-leading">
+                    <b>＋</b>
+                    <span>
+                      <strong>使用“{query.trim()}”</strong>
+                      <small>创建新的任务情境</small>
+                    </span>
+                  </span>
+                </button>
               )}
             </div>
           </div>,
@@ -1656,6 +1732,9 @@ export function GTDApp() {
               <span>情境</span>
               <SelectPopover
                 ariaLabel="选择任务情境"
+                searchable
+                allowCreate
+                searchPlaceholder="搜索或创建情境…"
                 value={selected.context}
                 options={
                   selected.context &&
@@ -1723,12 +1802,14 @@ export function GTDApp() {
               <SelectPopover
                 ariaLabel="选择前置任务"
                 searchable
-                value={selected.dependencyIds[0] || ""}
+                multiple
+                searchPlaceholder="搜索任务标题或项目…"
+                value=""
+                values={selected.dependencyIds}
                 options={dependencyOptions}
-                onChange={(value) =>
-                  setTask(selected.id, {
-                    dependencyIds: value ? [value] : [],
-                  })
+                onChange={() => undefined}
+                onMultiChange={(values) =>
+                  setTask(selected.id, { dependencyIds: values })
                 }
               />
             </label>

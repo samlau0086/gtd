@@ -16,6 +16,9 @@ test("ships the GTD Flow product shell", async () => {
   assert.match(app, /AI 智能拆分/);
   assert.match(app, /function SelectPopover/);
   assert.match(app, /aria-haspopup="listbox"/);
+  assert.match(app, /aria-multiselectable/);
+  assert.match(app, /allowCreate/);
+  assert.match(app, /创建新的任务情境/);
   assert.doesNotMatch(app, /<select/);
   assert.doesNotMatch(
     `${page}${layout}${packageJson}`,

@@ -915,6 +915,12 @@ select:focus-visible {
   background: #1d3533;
   color: #e9f8f6;
 }
+.select-options > button.select-create {
+  margin-top: 4px;
+  border-top: 1px solid #303839;
+  border-radius: 0 0 8px 8px;
+  color: var(--accent);
+}
 .select-options > button > em {
   color: var(--accent);
   font-size: 12px;
@@ -1436,6 +1442,34 @@ select:focus-visible {
   }
 }
 @media (max-width: 560px) {
+  .select-popover {
+    left: 12px !important;
+    right: 12px;
+    top: auto !important;
+    bottom: 12px;
+    width: auto !important;
+    max-height: min(70vh, 520px);
+    padding: 8px;
+    border-radius: 16px;
+    animation: select-sheet-in 0.16s ease-out;
+  }
+  .select-options {
+    max-height: calc(min(70vh, 520px) - 64px);
+  }
+  .select-options > button {
+    min-height: 50px;
+    padding: 8px 12px;
+  }
+  @keyframes select-sheet-in {
+    from {
+      opacity: 0;
+      transform: translateY(18px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
   .topbar {
     padding: 20px 16px 16px;
   }
