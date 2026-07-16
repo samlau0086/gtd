@@ -5,7 +5,7 @@
 ## 架构
 
 - Next.js 16 / Node.js 22
-- PostgreSQL 17
+- PostgreSQL 16 + pgvector
 - 应用内邮箱验证码认证（SMTP）
 - AES-GCM 加密保存每位用户的 AI API Key
 - Caddy 自动申请与续期 HTTPS 证书
@@ -32,7 +32,7 @@
 
 1. 构建生产镜像并推送到当前仓库的 GHCR。
 2. 通过 SSH 上传 `docker-compose.prod.yml`、`Caddyfile` 和运行环境文件。
-3. VPS 拉取指定提交对应的镜像，自动执行 PostgreSQL 迁移并更新服务。
+3. VPS 同时运行 `pgvector/pgvector:pg16`，拉取指定提交对应的应用镜像，自动启用 `vector` 扩展并执行迁移。
 4. 检查公网 `/api/health`；失败时尝试恢复上一镜像。
 
 建议在仓库 `Settings → Environments` 创建 `production` 环境，并在该环境中配置以下内容。生产环境可额外启用审批和分支保护。
@@ -69,6 +69,8 @@
 | `DOCKER_PLATFORM` | `linux/amd64` | VPS 为 ARM 时改成 `linux/arm64` |
 
 VPS 首次准备只需要安装 Docker Engine 与 Compose 插件，将部署用户加入 `docker` 组，并确保其能写入 `DEPLOY_PATH`。80/443 端口必须能从公网访问。工作流使用仓库自带的 `GITHUB_TOKEN` 发布和拉取 GHCR 镜像，无需额外配置 Registry Token。
+
+PostgreSQL 数据保存在固定卷 `gtd-flow-postgres` 中，应用发布不会删除或重建该卷。若 VPS 上已经存在 PostgreSQL 17 数据卷，不能直接挂载到 PostgreSQL 16；需要先用 `pg_dump` 导出，再在 PG16/pgvector 数据库中恢复。
 
 Actions 依赖由 Dependabot 每周检查更新。
 

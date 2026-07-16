@@ -30,13 +30,18 @@ test("ships the GTD Flow product shell", async () => {
 });
 
 test("ships PostgreSQL, self-hosted auth and AI security boundaries", async () => {
-  const [compose, dockerfile, migration, auth, otp, crypto, ai, aiTest, state] = await Promise.all([
+  const [compose, dockerfile, migration, vectorMigration, health, auth, otp, crypto, ai, aiTest, state] = await Promise.all([
     readFile(new URL("../docker-compose.yml", import.meta.url), "utf8"),
     readFile(new URL("../Dockerfile", import.meta.url), "utf8"),
     readFile(
       new URL("../postgres/migrations/001_init.sql", import.meta.url),
       "utf8",
     ),
+    readFile(
+      new URL("../postgres/migrations/002_enable_vector.sql", import.meta.url),
+      "utf8",
+    ),
+    readFile(new URL("../app/api/health/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/_lib/auth.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/auth/verify-otp/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/_lib/crypto.ts", import.meta.url), "utf8"),
@@ -50,11 +55,13 @@ test("ships PostgreSQL, self-hosted auth and AI security boundaries", async () =
     ),
     readFile(new URL("../app/api/state/route.ts", import.meta.url), "utf8"),
   ]);
-  assert.match(compose, /postgres:17-alpine/);
+  assert.match(compose, /pgvector\/pgvector:pg16/);
   assert.match(compose, /Caddyfile/);
   assert.match(dockerfile, /node scripts\/migrate\.mjs/);
   assert.match(migration, /CREATE TABLE IF NOT EXISTS tasks/);
   assert.match(migration, /CREATE TABLE IF NOT EXISTS task_dependencies/);
+  assert.match(vectorMigration, /CREATE EXTENSION IF NOT EXISTS vector/);
+  assert.match(health, /pg_extension/);
   assert.match(migration, /CREATE TABLE IF NOT EXISTS sessions/);
   assert.match(auth, /token_hash/);
   assert.match(otp, /timingSafeEqual/);
@@ -85,5 +92,6 @@ test("ships guarded GitHub Actions deployment to VPS", async () => {
   assert.doesNotMatch(workflow, /ssh-keyscan/);
   assert.match(compose, /name: gtd-flow/);
   assert.match(compose, /gtd-flow-postgres/);
+  assert.match(compose, /pgvector\/pgvector:pg16/);
   assert.match(compose, /APP_IMAGE/);
 });

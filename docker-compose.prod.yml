@@ -2,7 +2,7 @@ name: gtd-flow
 
 services:
   db:
-    image: postgres:17-alpine
+    image: pgvector/pgvector:pg16
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-gtdflow}
