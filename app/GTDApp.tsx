@@ -40,7 +40,7 @@ type DraftItem = {
   dueDate?: string;
   dependsOn: string[];
 };
-type AuthConfig = { url: string; key: string };
+type AuthConfig = { mode: "self-hosted" };
 type SettingsTab = "general" | "ai" | "account" | "data";
 type UserPreferences = {
   defaultView: ViewKey;
@@ -197,6 +197,25 @@ const seedState = (): AppState => {
   };
 };
 
+const freshSeedState = (): AppState => {
+  const template = seedState();
+  const projectIds = new Map(template.projects.map((item) => [item.id, uid()]));
+  const tagIds = new Map(template.tags.map((item) => [item.id, uid()]));
+  const taskIds = new Map(template.tasks.map((item) => [item.id, uid()]));
+  return {
+    projects: template.projects.map((item) => ({ ...item, id: projectIds.get(item.id)! })),
+    tags: template.tags.map((item) => ({ ...item, id: tagIds.get(item.id)! })),
+    tasks: template.tasks.map((item) => ({
+      ...item,
+      id: taskIds.get(item.id)!,
+      projectId: item.projectId ? projectIds.get(item.projectId) : undefined,
+      parentTaskId: item.parentTaskId ? taskIds.get(item.parentTaskId) : undefined,
+      tagIds: item.tagIds.map((id) => tagIds.get(id)!).filter(Boolean),
+      dependencyIds: item.dependencyIds.map((id) => taskIds.get(id)!).filter(Boolean),
+    })),
+  };
+};
+
 const NAV: Array<{ key: ViewKey; icon: string; label: string }> = [
   { key: "inbox", icon: "⌄", label: "收集箱" },
   { key: "today", icon: "☀", label: "今天" },
@@ -210,10 +229,8 @@ const NAV: Array<{ key: ViewKey; icon: string; label: string }> = [
 ];
 
 function AuthScreen({
-  config,
   onSession,
 }: {
-  config: AuthConfig;
   onSession: (token: string, email: string) => void;
 }) {
   const [email, setEmail] = useState("");
@@ -221,35 +238,35 @@ function AuthScreen({
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
-  const { url, key } = config;
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setBusy(true);
     setMessage("");
     try {
       if (!sent) {
-        const response = await fetch(`${url}/auth/v1/otp`, {
+        const response = await fetch("/api/auth/request-otp", {
           method: "POST",
-          headers: { "Content-Type": "application/json", apikey: key },
-          body: JSON.stringify({ email, create_user: true }),
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email }),
         });
-        if (!response.ok) throw new Error("验证码发送失败，请稍后再试");
+        const data = (await response.json()) as { error?: string };
+        if (!response.ok) throw new Error(data.error || "验证码发送失败，请稍后再试");
         setSent(true);
         setMessage("6 位验证码已发送，请查看邮箱");
       } else {
-        const response = await fetch(`${url}/auth/v1/verify`, {
+        const response = await fetch("/api/auth/verify-otp", {
           method: "POST",
-          headers: { "Content-Type": "application/json", apikey: key },
-          body: JSON.stringify({ email, token: code, type: "email" }),
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, code }),
         });
         const data = (await response.json()) as {
-          access_token?: string;
+          accessToken?: string;
           user?: { email?: string };
-          msg?: string;
+          error?: string;
         };
-        if (!response.ok || !data.access_token)
-          throw new Error(data.msg || "验证码无效或已过期");
-        onSession(data.access_token, data.user?.email || email);
+        if (!response.ok || !data.accessToken)
+          throw new Error(data.error || "验证码无效或已过期");
+        onSession(data.accessToken, data.user?.email || email);
       }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "登录失败");
@@ -954,7 +971,7 @@ function AIModal({
   task: Task;
   token: string;
   onClose: () => void;
-  onCommit: (items: DraftItem[]) => void;
+  onCommit: (items: DraftItem[]) => Promise<void>;
 }) {
   const [step, setStep] = useState<"prompt" | "config" | "preview">("prompt");
   const [instruction, setInstruction] =
@@ -1189,9 +1206,18 @@ function AIModal({
             <button
               className="primary"
               disabled={!draft.length}
-              onClick={() => onCommit(draft)}
+              onClick={async () => {
+                setBusy(true);
+                setError("");
+                try {
+                  await onCommit(draft);
+                } catch (error) {
+                  setError(error instanceof Error ? error.message : "创建子任务失败");
+                  setBusy(false);
+                }
+              }}
             >
-              确认并创建 {draft.length} 项
+              {busy ? "创建中…" : `确认并创建 ${draft.length} 项`}
             </button>
           )}
         </footer>
@@ -1450,7 +1476,7 @@ function SettingsDrawer({
                   <p>连接你自己的 OpenAI 兼容模型，用于自动拆分任务。</p>
                 </div>
                 {!token ? (
-                  <div className="settings-empty"><span>✦</span><strong>演示模式不保存模型密钥</strong><p>配置 Supabase 并登录账号后即可安全保存。</p></div>
+                  <div className="settings-empty"><span>✦</span><strong>请先登录账号</strong><p>登录后即可在 PostgreSQL 中安全保存加密后的模型配置。</p></div>
                 ) : (
                   <div className="ai-settings-card">
                     <label>Base URL<input value={config.baseUrl} onChange={(event) => setConfig({ ...config, baseUrl: event.target.value })} placeholder="https://api.openai.com/v1" /></label>
@@ -1503,10 +1529,10 @@ export function GTDApp() {
   const [authConfig, setAuthConfig] = useState<AuthConfig | null | undefined>(
     undefined,
   );
-  const supabaseReady = Boolean(authConfig);
+  const authReady = Boolean(authConfig);
   const [token, setToken] = useState("");
-  const [email, setEmail] = useState("演示账户");
-  const [state, setState] = useState<AppState>(() => seedState());
+  const [email, setEmail] = useState("账户");
+  const [state, setState] = useState<AppState>(() => ({ projects: [], tasks: [], tags: [] }));
   const [ready, setReady] = useState(false);
   const [view, setView] = useState<ViewKey>("today");
   const [mode, setMode] = useState<"list" | "gantt">("list");
@@ -1550,18 +1576,9 @@ export function GTDApp() {
       setToken(savedToken);
       setEmail(savedEmail);
     }
-    if (!supabaseReady) {
-      const local = localStorage.getItem("gtdflow-demo");
-      if (local)
-        try {
-          setState(JSON.parse(local));
-        } catch {}
-      setReady(true);
-      loaded.current = true;
-    }
-  }, [authConfig, supabaseReady]);
+  }, [authConfig, authReady]);
   useEffect(() => {
-    if (!supabaseReady || !token) return;
+    if (!authReady || !token) return;
     fetch("/api/state", { headers: { Authorization: `Bearer ${token}` } })
       .then(async (r) => {
         if (r.status === 401) {
@@ -1571,9 +1588,12 @@ export function GTDApp() {
         }
         if (!r.ok) throw new Error();
         const data = (await r.json()) as AppState;
-        setState(
-          data.tasks.length || data.projects.length ? data : seedState(),
-        );
+        if (data.tasks.length || data.projects.length) {
+          setState(data);
+        } else {
+          loaded.current = true;
+          setState(freshSeedState());
+        }
         setReady(true);
         setTimeout(() => {
           loaded.current = true;
@@ -1583,13 +1603,9 @@ export function GTDApp() {
         setReady(true);
         setSync("error");
       });
-  }, [supabaseReady, token]);
+  }, [authReady, token]);
   useEffect(() => {
     if (!ready || !loaded.current) return;
-    if (!supabaseReady) {
-      localStorage.setItem("gtdflow-demo", JSON.stringify(state));
-      return;
-    }
     if (!token) return;
     setSync("saving");
     const timer = setTimeout(
@@ -1610,7 +1626,7 @@ export function GTDApp() {
       700,
     );
     return () => clearTimeout(timer);
-  }, [state, ready, supabaseReady, token]);
+  }, [state, ready, authReady, token]);
   useEffect(() => setSubtaskTitle(""), [selectedId]);
   const setTask = useCallback(
     (id: string, patch: Partial<Task>) =>
@@ -1843,8 +1859,16 @@ export function GTDApp() {
         <span>正在准备你的工作台…</span>
       </main>
     );
-  if (supabaseReady && !token)
-    return <AuthScreen config={authConfig!} onSession={signIn} />;
+  if (authConfig === null)
+    return (
+      <main className="loading">
+        <div className="brand-mark">!</div>
+        <strong>服务配置暂不可用</strong>
+        <span>请检查 PostgreSQL 与应用环境变量后重试。</span>
+      </main>
+    );
+  if (!token)
+    return <AuthScreen onSession={signIn} />;
   if (!ready)
     return (
       <main className="loading">
@@ -1862,6 +1886,12 @@ export function GTDApp() {
     localStorage.setItem("gtdflow-preferences", JSON.stringify(value));
   };
   const signOut = () => {
+    if (token) {
+      fetch("/api/auth/logout", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      }).catch(() => undefined);
+    }
     localStorage.removeItem("gtdflow-token");
     localStorage.removeItem("gtdflow-email");
     setSettingsOpen(false);
@@ -1874,27 +1904,16 @@ export function GTDApp() {
           <div className="avatar">{email[0]?.toUpperCase() || "G"}</div>
           <div>
             <strong>
-              {email === "演示账户" ? "GTD Flow 演示" : email.split("@")[0]}
+              {email.split("@")[0]}
             </strong>
             <span>{email}</span>
           </div>
           <button
-            onClick={() => {
-              if (supabaseReady) {
-                localStorage.removeItem("gtdflow-token");
-                setToken("");
-              }
-            }}
+            onClick={signOut}
           >
             ⌄
           </button>
         </div>
-        {!supabaseReady && (
-          <div className="demo-badge">
-            <b>演示模式</b>
-            <span>配置 Supabase 后自动切换云同步</span>
-          </div>
-        )}
         <label className="search">
           <span>⌕</span>
           <input
@@ -2374,27 +2393,23 @@ export function GTDApp() {
           task={aiTask}
           token={token}
           onClose={() => setAiTask(undefined)}
-          onCommit={(items) => {
-            const ids = new Map(items.map((item) => [item.tempId, uid()]));
-            const created: Task[] = items.map((item, index) => ({
-              id: ids.get(item.tempId)!,
-              parentTaskId: aiTask.id,
-              projectId: aiTask.projectId,
-              title: item.title,
-              notes: item.notes,
-              status: "next",
-              context: aiTask.context,
-              important: false,
-              startDate: item.startDate,
-              dueDate: item.dueDate,
-              estimate: item.estimate,
-              sortOrder: state.tasks.length + index,
-              tagIds: [...aiTask.tagIds],
-              dependencyIds: item.dependsOn
-                .map((id) => ids.get(id))
-                .filter(Boolean) as string[],
-            }));
-            setState({ ...state, tasks: [...state.tasks, ...created] });
+          onCommit={async (items) => {
+            const response = await fetch("/api/ai/decompose/commit", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`,
+              },
+              body: JSON.stringify({ parentTaskId: aiTask.id, items }),
+            });
+            const result = (await response.json()) as { error?: string };
+            if (!response.ok) throw new Error(result.error || "创建子任务失败");
+            const refreshed = await fetch("/api/state", {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            if (!refreshed.ok) throw new Error("子任务已创建，请刷新页面查看");
+            const nextState = (await refreshed.json()) as AppState;
+            setState(nextState);
             setAiTask(undefined);
             setMode("gantt");
           }}

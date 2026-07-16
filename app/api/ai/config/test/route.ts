@@ -1,6 +1,6 @@
-import { DB } from "../../../../../db/binding";
+import { query } from "../../../../../db/binding";
 import { authError, requireUser } from "../../../_lib/auth";
-import { decryptSecret, validateBaseUrl } from "../../../_lib/crypto";
+import { assertPublicEndpoint, decryptSecret, validateBaseUrl } from "../../../_lib/crypto";
 
 type ConfigRow = {
   baseUrl: string;
@@ -16,12 +16,13 @@ export async function POST(request: Request) {
       model?: string;
       apiKey?: string;
     };
-    const existing = await DB.prepare(
-      "SELECT base_url AS baseUrl, model, encrypted_key AS encryptedKey FROM ai_configs WHERE user_id = ?",
-    )
-      .bind(user.id)
-      .first<ConfigRow>();
+    const existingResult = await query<ConfigRow>(
+      `SELECT base_url AS "baseUrl",model,encrypted_key AS "encryptedKey" FROM ai_configs WHERE user_id=$1`,
+      [user.id],
+    );
+    const existing = existingResult.rows[0];
     const baseUrl = validateBaseUrl(body.baseUrl || existing?.baseUrl || "");
+    await assertPublicEndpoint(baseUrl);
     const model = (body.model || existing?.model || "").trim().slice(0, 120);
     if (!model)
       return Response.json({ error: "模型名称不能为空" }, { status: 400 });

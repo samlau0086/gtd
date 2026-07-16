@@ -1,7 +1,11 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  output: "standalone",
+  outputFileTracingRoot: process.cwd(),
+  poweredByHeader: false,
+  serverExternalPackages: ["pg", "nodemailer"],
+  turbopack: { root: process.cwd() },
 };
 
 export default nextConfig;

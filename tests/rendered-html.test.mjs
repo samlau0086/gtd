@@ -29,14 +29,16 @@ test("ships the GTD Flow product shell", async () => {
   );
 });
 
-test("ships durable data, auth and AI security boundaries", async () => {
-  const [hosting, migration, auth, crypto, ai, aiTest, state] = await Promise.all([
-    readFile(new URL("../.openai/hosting.json", import.meta.url), "utf8"),
+test("ships PostgreSQL, self-hosted auth and AI security boundaries", async () => {
+  const [compose, dockerfile, migration, auth, otp, crypto, ai, aiTest, state] = await Promise.all([
+    readFile(new URL("../docker-compose.yml", import.meta.url), "utf8"),
+    readFile(new URL("../Dockerfile", import.meta.url), "utf8"),
     readFile(
-      new URL("../drizzle/0000_unique_bulldozer.sql", import.meta.url),
+      new URL("../postgres/migrations/001_init.sql", import.meta.url),
       "utf8",
     ),
     readFile(new URL("../app/api/_lib/auth.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/auth/verify-otp/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/_lib/crypto.ts", import.meta.url), "utf8"),
     readFile(
       new URL("../app/api/ai/decompose/route.ts", import.meta.url),
@@ -48,17 +50,23 @@ test("ships durable data, auth and AI security boundaries", async () => {
     ),
     readFile(new URL("../app/api/state/route.ts", import.meta.url), "utf8"),
   ]);
-  assert.match(hosting, /"d1": "DB"/);
-  assert.match(migration, /CREATE TABLE `tasks`/);
-  assert.match(migration, /CREATE TABLE `task_dependencies`/);
-  assert.match(auth, /\/auth\/v1\/user/);
+  assert.match(compose, /postgres:17-alpine/);
+  assert.match(compose, /Caddyfile/);
+  assert.match(dockerfile, /node scripts\/migrate\.mjs/);
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS tasks/);
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS task_dependencies/);
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS sessions/);
+  assert.match(auth, /token_hash/);
+  assert.match(otp, /timingSafeEqual/);
+  assert.match(otp, /INTERVAL '30 days'/);
   assert.match(crypto, /AES-GCM/);
   assert.match(crypto, /privateHost/);
+  assert.match(crypto, /assertPublicEndpoint/);
   assert.match(ai, /chat\/completions/);
   assert.match(aiTest, /chat\/completions/);
   assert.match(aiTest, /requireUser/);
   assert.match(aiTest, /15000/);
   assert.doesNotMatch(aiTest, /Response\.json\([^)]*apiKey/);
-  assert.match(state, /WHERE user_id = \?/);
-  assert.match(state, /DB\.batch/);
+  assert.match(state, /WHERE user_id=\$1/);
+  assert.match(state, /withTransaction/);
 });

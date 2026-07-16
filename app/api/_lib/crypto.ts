@@ -24,8 +24,32 @@ export async function decryptSecret(value: string) {
 
 export function validateBaseUrl(value: string) {
   const url = new URL(value);
-  const host = url.hostname.toLowerCase();
-  const privateHost = host === "localhost" || host === "::1" || host === "0.0.0.0" || host.startsWith("127.") || host.startsWith("10.") || host.startsWith("192.168.") || /^172\.(1[6-9]|2\d|3[01])\./.test(host) || host.endsWith(".local");
+  const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  const privateHost = host === "localhost" || host.endsWith(".local") || host.endsWith(".internal") || host.endsWith(".lan") || (isIP(host) > 0 && !isPublicIp(host));
   if (url.protocol !== "https:" || privateHost || url.username || url.password) throw new Error("仅支持公开的 HTTPS 模型地址");
   return url.toString().replace(/\/$/, "");
 }
+
+function isPublicIp(address: string) {
+  if (isIP(address) === 4) {
+    const [a,b] = address.split(".").map(Number);
+    return !(a === 0 || a === 10 || a === 127 || (a === 100 && b >= 64 && b <= 127) || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 198 && (b === 18 || b === 19)) || a >= 224);
+  }
+  const value = address.toLowerCase();
+  if (value.startsWith("::ffff:")) return isPublicIp(value.slice(7));
+  return !(value === "::" || value === "::1" || value.startsWith("fc") || value.startsWith("fd") || /^fe[89ab]/.test(value) || value.startsWith("2001:db8:"));
+}
+
+export async function assertPublicEndpoint(baseUrl: string) {
+  const hostname = new URL(baseUrl).hostname.replace(/^\[|\]$/g, "");
+  if (isIP(hostname)) {
+    if (!isPublicIp(hostname)) throw new Error("模型地址不能指向私有网络");
+    return;
+  }
+  const addresses = await lookup(hostname, { all: true, verbatim: true });
+  if (!addresses.length || addresses.some((item) => !isPublicIp(item.address))) {
+    throw new Error("模型地址不能解析到私有网络");
+  }
+}
+import { lookup } from "node:dns/promises";
+import { isIP } from "node:net";
