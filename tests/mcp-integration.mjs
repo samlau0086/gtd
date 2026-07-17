@@ -62,8 +62,18 @@ assert.equal(listed.structuredContent.items[0].id, task.id);
 const updated = await client.callTool({ name: "update_task", arguments: { taskId: task.id, expectedRevision: task.revision, patch: { important: true, dueDate: "2030-01-02" } } });
 assert.equal(updated.structuredContent.record.revision, 2);
 
+await pool.query(`INSERT INTO notification_settings(user_id,webhook_enabled,webhook_url,encrypted_webhook_secret) VALUES($1,TRUE,'https://example.com/gtd-hook','integration-placeholder') ON CONFLICT(user_id) DO UPDATE SET webhook_enabled=TRUE,webhook_url=EXCLUDED.webhook_url,encrypted_webhook_secret=EXCLUDED.encrypted_webhook_secret`,[login.user.id]);
+const reminder = await json(`/api/tasks/${task.id}/reminder`, { method:"PUT", headers:auth, body:JSON.stringify({ localDateTime:`${new Date().getUTCFullYear()+2}-01-15T09:00`, timezone:"Asia/Shanghai", channels:["webhook"] }) });
+assert.equal(reminder.channels[0], "webhook");
+const taskWithReminder = await json(`/api/tasks/${task.id}`, { headers:auth });
+assert.equal(taskWithReminder.reminder.id, reminder.id);
+
 const stale = await client.callTool({ name: "complete_task", arguments: { taskId: task.id, expectedRevision: 1, completed: true } });
 assert.equal(stale.isError, true);
+const completed = await client.callTool({ name:"complete_task", arguments:{ taskId:task.id, expectedRevision:2, completed:true } });
+assert.equal(completed.isError, undefined);
+const cancelledReminder = await json(`/api/tasks/${task.id}`, { headers:auth });
+assert.equal(cancelledReminder.reminder.status, "cancelled");
 
 const resource = await client.readResource({ uri: "gtd://overview" });
 assert.equal(resource.contents[0].mimeType, "application/json");

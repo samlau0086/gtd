@@ -13,6 +13,11 @@
   --danger: #f17878;
   color-scheme: dark;
 }
+
+/* Task reminders */
+.reminder-field{position:relative;margin:12px 16px 0}.reminder-trigger{width:100%;min-height:58px;display:flex;align-items:center;gap:12px;padding:10px 14px;border:1px solid #2f3738;border-radius:10px;background:#202627;color:#dce5e4;text-align:left}.reminder-trigger>span{color:var(--accent);font-size:20px}.reminder-trigger>div{flex:1;min-width:0}.reminder-trigger strong,.reminder-trigger small{display:block}.reminder-trigger strong{font-size:11px}.reminder-trigger small{margin-top:4px;color:#7f8b8a;font-size:9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.reminder-trigger>b{color:#71807e;font-size:18px}.reminder-popover{position:absolute;z-index:55;left:0;right:0;top:calc(100% + 6px);padding:8px;border:1px solid #3b4646;border-radius:12px;background:#191e1f;box-shadow:0 18px 45px #000a}.reminder-popover header{height:38px;display:flex;align-items:center;justify-content:space-between;padding:0 8px}.reminder-popover header button{background:transparent;color:#9aa6a5;font-size:18px}.reminder-popover>button:not(.configure-link){width:100%;height:42px;display:flex;align-items:center;justify-content:space-between;padding:0 10px;border-radius:8px;background:transparent;color:#cbd5d4}.reminder-popover>button:hover,.reminder-popover>button.selected{background:#24302f;color:var(--accent)}.reminder-popover em{color:#788584;font-size:10px;font-style:normal}.custom-reminder{display:block;margin:6px 0;padding:9px 10px;border-top:1px solid #303839;border-bottom:1px solid #303839;color:#879392;font-size:9px}.custom-reminder input{width:100%;height:36px;margin-top:7px;padding:0 8px;border:1px solid #36403f;border-radius:7px;background:#141919;color:#dce5e4;color-scheme:dark}.reminder-channels{padding:8px 10px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}.reminder-channels>span{width:100%;color:#7f8b8a;font-size:9px}.reminder-channels button{height:27px;padding:0 9px;border-radius:14px;background:#293130;color:#899493;font-size:9px}.reminder-channels button.active{background:#24413e;color:var(--accent)}.reminder-channels button:disabled{opacity:.35}.reminder-popover footer{display:flex;justify-content:space-between;padding:9px 8px 3px}.remove-reminder{background:transparent;color:#d47c77}.save-reminder{min-height:34px;padding:0 14px;border-radius:8px;background:var(--accent);color:#102322;font-weight:800}.save-reminder:disabled{opacity:.45}.configure-link{margin:4px 10px;background:transparent;color:var(--accent);font-size:10px}
+.ai-settings-card select{width:100%;height:43px;margin-top:7px;padding:0 12px;border:1px solid #35403f;border-radius:8px;background:#181d1e;color:#e6eceb}.notification-settings-card{display:grid;gap:12px}.notification-channel-form{padding:12px;border:1px solid #303a39;border-radius:10px;background:#1b2121}.notification-channel-card{min-height:58px;display:flex;align-items:center;gap:7px}.notification-channel-card>div{flex:1;min-width:0}.notification-channel-card strong,.notification-channel-card span{display:block}.notification-channel-card strong{font-size:11px}.notification-channel-card span{margin-top:4px;color:#788584;font-size:9px}.notification-channel-card>button{min-width:52px;height:29px;padding:0 8px;border-radius:7px;background:#293232;color:#9eaaa9;font-size:9px}.notification-channel-card>button.channel-on{background:#24413e;color:var(--accent)}.notification-channel-card>button:disabled{opacity:.4}
+.push-device-list{border-top:1px solid #303839}.push-device-list>div{min-height:46px;display:flex;align-items:center;justify-content:space-between;padding:6px 4px}.push-device-list span,.push-device-list strong,.push-device-list small{display:block}.push-device-list strong{font-size:9px}.push-device-list small{margin-top:3px;color:#72807e;font-size:8px}.push-device-list button{background:transparent;color:#d47c77;font-size:9px}
 * {
   box-sizing: border-box;
 }
@@ -357,7 +362,7 @@ select:focus-visible {
   gap: 2px;
 }
 .sidebar nav button,
-.projects > button {
+.project-link {
   height: 38px;
   border-radius: 7px;
   background: transparent;
@@ -369,11 +374,11 @@ select:focus-visible {
   color: #c9d1d0;
 }
 .sidebar nav button:hover,
-.projects > button:hover {
+.project-item:hover {
   background: #202627;
 }
 .sidebar nav button.active,
-.projects > button.active {
+.project-item.active {
   background: #293031;
   color: white;
   box-shadow: inset 3px 0 var(--accent);
@@ -396,11 +401,11 @@ select:focus-visible {
   background: #69d2c814;
 }
 .sidebar nav button span,
-.projects > button span {
+.project-link span {
   font-size: 13px;
 }
 .sidebar nav button b,
-.projects > button b {
+.project-link b {
   min-width: 20px;
   height: 20px;
   padding: 0 5px;
@@ -417,7 +422,7 @@ select:focus-visible {
   margin-top: 12px;
   padding-top: 12px;
 }
-.projects > div {
+.projects-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -428,7 +433,7 @@ select:focus-visible {
   text-transform: uppercase;
   letter-spacing: 0.12em;
 }
-.projects > div button {
+.projects-header button {
   background: none;
   color: var(--muted);
   width: 26px;
@@ -437,14 +442,75 @@ select:focus-visible {
   place-items: center;
   border-radius: 6px;
 }
-.projects > div button:hover {
+.projects-header button:hover {
   color: var(--accent);
   background: #69d2c812;
 }
-.projects > button i {
+.project-link i {
   width: 8px;
   height: 8px;
   border-radius: 3px;
+}
+.project-item {
+  position: relative;
+  height: 38px;
+  border-radius: 7px;
+}
+.project-link {
+  width: 100%;
+}
+.project-link span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.project-actions {
+  position: absolute;
+  right: 6px;
+  top: 5px;
+  display: flex;
+  gap: 2px;
+  padding-left: 14px;
+  background: linear-gradient(90deg, transparent, #202627 12px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .15s ease;
+}
+.project-item.active .project-actions {
+  background: linear-gradient(90deg, transparent, #293031 12px);
+}
+.project-item:hover .project-actions,
+.project-item:focus-within .project-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+.project-actions button {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  background: transparent;
+  color: #8f9a99;
+}
+.project-actions button:hover {
+  background: #3a4243;
+  color: white;
+}
+.project-actions button.danger:hover {
+  color: #ff726c;
+}
+@media (hover: none) {
+  .project-actions {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .project-link {
+    padding-right: 70px;
+  }
+  .project-link b {
+    display: none;
+  }
 }
 .sidebar-foot {
   margin-top: auto;
@@ -895,7 +961,8 @@ select:focus-visible {
   min-height: 52px;
 }
 .density-compact .sidebar nav button,
-.density-compact .projects > button {
+.density-compact .project-item,
+.density-compact .project-link {
   min-height: 34px;
 }
 @keyframes settings-slide {

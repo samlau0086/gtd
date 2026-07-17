@@ -10,6 +10,7 @@ export type TaskRecord = {
   id:string; projectId?:string; parentTaskId?:string; title:string; notes:string; status:TaskStatus;
   context:string; important:boolean; startDate?:string; dueDate?:string; estimate:number; sortOrder:number;
   tagIds:string[]; dependencyIds:string[]; revision:number; updatedAt:string;
+  reminder?: { id:string; remindAt:string; timezone:string; channels:("email"|"webhook"|"bark"|"push")[]; status:string };
 };
 export type TaskPatch = Partial<Omit<TaskRecord,"id"|"revision"|"updatedAt">>;
 
@@ -30,12 +31,14 @@ const normalizeTask = (row:any):TaskRecord => ({
   startDate:row.startDate || undefined, dueDate:row.dueDate || undefined, estimate:Number(row.estimate) || 1,
   sortOrder:Number(row.sortOrder) || 0, tagIds:row.tagIds || [], dependencyIds:row.dependencyIds || [],
   revision:Number(row.revision) || 1, updatedAt:new Date(row.updatedAt).toISOString(),
+  reminder:row.reminder ? {...row.reminder,remindAt:new Date(row.reminder.remindAt).toISOString()} : undefined,
 });
 
 const taskSelect = `SELECT t.id,t.project_id AS "projectId",t.parent_task_id AS "parentTaskId",t.title,t.notes,t.status,t.context,t.important,
  t.start_date AS "startDate",t.due_date AS "dueDate",t.estimate,t.sort_order AS "sortOrder",t.revision,t.updated_at AS "updatedAt",
  COALESCE((SELECT ARRAY_AGG(tt.tag_id ORDER BY tt.tag_id) FROM task_tags tt WHERE tt.task_id=t.id),ARRAY[]::TEXT[]) AS "tagIds",
- COALESCE((SELECT ARRAY_AGG(td.depends_on_task_id ORDER BY td.depends_on_task_id) FROM task_dependencies td WHERE td.task_id=t.id),ARRAY[]::TEXT[]) AS "dependencyIds"
+ COALESCE((SELECT ARRAY_AGG(td.depends_on_task_id ORDER BY td.depends_on_task_id) FROM task_dependencies td WHERE td.task_id=t.id),ARRAY[]::TEXT[]) AS "dependencyIds",
+ (SELECT json_build_object('id',r.id,'remindAt',r.remind_at,'timezone',r.timezone,'channels',r.channels,'status',r.status) FROM task_reminders r WHERE r.task_id=t.id) AS reminder
  FROM tasks t`;
 
 export async function getDataVersion(userId:string, client?:PoolClient) {
@@ -147,6 +150,7 @@ export async function updateTask(userId:string,id:string,expectedRevision:number
     if(!updated.rowCount) throw new GtdError("任务已在其他客户端更新",409,{current:await getTask(userId,id,client)});
     if(patch.tagIds){await client.query("DELETE FROM task_tags WHERE task_id=$1",[id]);for(const tagId of tags)await client.query("INSERT INTO task_tags(task_id,tag_id) VALUES($1,$2)",[id,tagId]);}
     if(patch.dependencyIds){await client.query("DELETE FROM task_dependencies WHERE task_id=$1 AND user_id=$2",[id,userId]);for(const dep of deps)await client.query("INSERT INTO task_dependencies(task_id,depends_on_task_id,user_id) VALUES($1,$2,$3)",[id,dep,userId]);}
+    if(next.status==="done"&&current.status!=="done") await client.query("UPDATE task_reminders SET status='cancelled',updated_at=NOW() WHERE task_id=$1 AND user_id=$2 AND status IN ('pending','processing')",[id,userId]);
     const dataVersion=await bumpDataVersion(client,userId);return{record:(await getTask(userId,id,client))!,dataVersion};
   });
 }

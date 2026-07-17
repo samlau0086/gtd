@@ -34,7 +34,12 @@ type Task = {
   dependencyIds: string[];
   revision?: number;
   updatedAt?: string;
+  reminder?: TaskReminder;
 };
+type NotificationChannel = "email" | "webhook" | "bark" | "push";
+type TaskReminder = { id:string; remindAt:string; timezone:string; channels:NotificationChannel[]; status:string };
+type NotificationSettings = { timezone:string; emailEnabled:boolean; emailAvailable:boolean; webhookEnabled:boolean; webhookUrl:string; webhookSecret?:string; hasWebhookSecret:boolean; barkEnabled:boolean; barkBaseUrl:string; barkKey?:string; hasBarkKey:boolean; pushAvailable:boolean; pushSubscriptionCount:number; vapidPublicKey:string };
+type PushDevice = { id:string; endpoint:string; deviceName:string; enabled:boolean; createdAt:string; lastSeenAt:string };
 type AppState = { projects: Project[]; tasks: Task[]; tags: Tag[]; dataVersion?: number };
 type DraftItem = {
   tempId: string;
@@ -56,9 +61,10 @@ type DialogRequest = {
   confirmLabel: string;
   danger?: boolean;
   placeholder?: string;
+  initialValue?: string;
   resolve: (value: boolean | string | null) => void;
 };
-type SettingsTab = "general" | "smtp" | "ai" | "mcp" | "account" | "data";
+type SettingsTab = "general" | "notifications" | "smtp" | "ai" | "mcp" | "account" | "data";
 type UserPreferences = {
   defaultView: ViewKey;
   weekStartsOn: "monday" | "sunday";
@@ -96,7 +102,7 @@ const formatDate = (value?: string) =>
 
 const projectPayload = ({ id: _id, revision: _revision, updatedAt: _updatedAt, ...project }: Project) => project;
 const tagPayload = ({ id: _id, revision: _revision, updatedAt: _updatedAt, ...tag }: Tag) => tag;
-const taskPayload = ({ id: _id, revision: _revision, updatedAt: _updatedAt, ...task }: Task) => task;
+const taskPayload = ({ id: _id, revision: _revision, updatedAt: _updatedAt, reminder: _reminder, ...task }: Task) => task;
 const taskMutationPayload = (task: Task) => ({ ...taskPayload(task), projectId: task.projectId || null, parentTaskId: task.parentTaskId || null, startDate: task.startDate || null, dueDate: task.dueDate || null });
 const sameEntity = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right);
 
@@ -244,7 +250,7 @@ const freshSeedState = (): AppState => {
 type IconName =
   | "inbox" | "sun" | "arrow-right" | "projects" | "clock" | "calendar"
   | "sparkles" | "review" | "check" | "chevron-down" | "search" | "plus"
-  | "settings" | "menu" | "list" | "gantt" | "cloud-check";
+  | "settings" | "menu" | "list" | "gantt" | "cloud-check" | "edit" | "trash";
 
 const ICON_PATHS: Record<IconName, ReactNode> = {
   inbox: <><path d="M4 4h16l1.5 11.5A4 4 0 0 1 17.5 20h-11a4 4 0 0 1-4-4.5L4 4Z"/><path d="M3 14h5l1.5 2h5l1.5-2h5"/></>,
@@ -264,6 +270,8 @@ const ICON_PATHS: Record<IconName, ReactNode> = {
   list: <><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r=".5" fill="currentColor" stroke="none"/><circle cx="4.5" cy="12" r=".5" fill="currentColor" stroke="none"/><circle cx="4.5" cy="18" r=".5" fill="currentColor" stroke="none"/></>,
   gantt: <><path d="M4 6h7M4 12h13M4 18h10"/><path d="M11 4v4M17 10v4M14 16v4"/></>,
   "cloud-check": <><path d="M17.5 19H7a5 5 0 1 1 1.3-9.83A6 6 0 0 1 20 11a4 4 0 0 1-2.5 8Z"/><path d="m9 14 2 2 4-4"/></>,
+  edit: <><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/></>,
+  trash: <><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"/></>,
 };
 
 function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
@@ -502,7 +510,7 @@ function TaskRow({
 }
 
 function FriendlyDialog({ request, onClose }: { request: DialogRequest; onClose: () => void }) {
-  const [value, setValue] = useState("");
+  const [value, setValue] = useState(request.initialValue || "");
   const finish = (result: boolean | string | null) => {
     request.resolve(result);
     onClose();
@@ -521,7 +529,7 @@ function FriendlyDialog({ request, onClose }: { request: DialogRequest; onClose:
         <div className="dialog-copy">
           <h2 id={`dialog-${request.id}`}>{request.title}</h2>
           <p>{request.description}</p>
-          {request.kind === "prompt" && <input autoFocus value={value} onChange={(event) => setValue(event.target.value)} placeholder={request.placeholder} onKeyDown={(event) => { if (event.key === "Enter" && value.trim()) finish(value.trim()); }} />}
+          {request.kind === "prompt" && <input autoFocus maxLength={80} value={value} onChange={(event) => setValue(event.target.value)} placeholder={request.placeholder} onFocus={(event) => event.currentTarget.select()} onKeyDown={(event) => { if (event.key === "Enter" && value.trim()) finish(value.trim()); }} />}
         </div>
         <footer>
           <button onClick={() => finish(request.kind === "confirm" ? false : null)}>取消</button>
@@ -1455,6 +1463,23 @@ function AIModal({
   );
 }
 
+const authHeaders=(token:string,json=false)=>({...(json?{"Content-Type":"application/json"}:{}),Authorization:`Bearer ${token}`});
+const zonedNowParts=(timezone:string)=>Object.fromEntries(new Intl.DateTimeFormat("en-CA",{timeZone:timezone,year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hourCycle:"h23",weekday:"short"}).formatToParts().filter(x=>x.type!=="literal").map(x=>[x.type,x.value]));
+const nextMonday=(date:string)=>{const day=new Date(`${date}T12:00:00`).getDay();return addDays(date,day===1?7:(8-day)%7);};
+const formatReminder=(reminder:TaskReminder)=>new Intl.DateTimeFormat("zh-CN",{timeZone:reminder.timezone,month:"long",day:"numeric",weekday:"short",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).format(new Date(reminder.remindAt));
+
+function ReminderEditor({task,token,onChange,onOpenSettings,onToast}:{task:Task;token:string;onChange:(reminder?:TaskReminder)=>void;onOpenSettings:()=>void;onToast:(message:string,type?:ToastItem["type"])=>void}){
+  const [open,setOpen]=useState(false),[settings,setSettings]=useState<NotificationSettings>(),[localDateTime,setLocalDateTime]=useState(""),[channels,setChannels]=useState<NotificationChannel[]>(task.reminder?.channels||[]),[busy,setBusy]=useState(false);
+  const load=async()=>{const response=await fetch("/api/notification-settings",{headers:authHeaders(token)}),data=await response.json();if(!response.ok)throw new Error(data.error||"读取通知设置失败");setSettings(data);if(!channels.length){const defaults:NotificationChannel[]=[];if(data.emailEnabled&&data.emailAvailable)defaults.push("email");if(data.webhookEnabled&&data.webhookUrl)defaults.push("webhook");if(data.barkEnabled&&data.hasBarkKey)defaults.push("bark");if(data.pushAvailable&&data.pushSubscriptionCount)defaults.push("push");setChannels(defaults);}return data as NotificationSettings;};
+  const show=()=>{setOpen(true);void load().catch(error=>onToast(error instanceof Error?error.message:"读取通知设置失败","error"));};
+  const choose=(value:string)=>setLocalDateTime(value);
+  const quickOptions=useMemo(()=>{if(!settings)return[];const parts=zonedNowParts(settings.timezone),date=`${parts.year}-${parts.month}-${parts.day}`,options:{label:string;value:string;meta:string}[]=[];if(`${parts.hour}:${parts.minute}`<"19:00")options.push({label:"今天晚些时候",value:`${date}T19:00`,meta:"19:00"});const tomorrow=addDays(date,1),monday=nextMonday(date);options.push({label:"明天",value:`${tomorrow}T09:00`,meta:"09:00"},{label:"下周",value:`${monday}T09:00`,meta:"周一 09:00"});return options;},[settings]);
+  const available=(channel:NotificationChannel)=>Boolean(settings&&({email:settings.emailEnabled&&settings.emailAvailable,webhook:settings.webhookEnabled&&settings.webhookUrl,bark:settings.barkEnabled&&settings.hasBarkKey,push:settings.pushAvailable&&settings.pushSubscriptionCount}[channel]));
+  const save=async()=>{if(!settings||!localDateTime||!channels.length)return onToast("请选择提醒时间和至少一个渠道","error");setBusy(true);try{const response=await fetch(`/api/tasks/${encodeURIComponent(task.id)}/reminder`,{method:"PUT",headers:authHeaders(token,true),body:JSON.stringify({localDateTime,timezone:settings.timezone,channels})}),data=await response.json();if(!response.ok)throw new Error(data.error||"保存提醒失败");onChange(data);setOpen(false);onToast("任务提醒已设置");}catch(error){onToast(error instanceof Error?error.message:"保存提醒失败","error");}finally{setBusy(false);}};
+  const remove=async()=>{setBusy(true);try{const response=await fetch(`/api/tasks/${encodeURIComponent(task.id)}/reminder`,{method:"DELETE",headers:authHeaders(token)}),data=await response.json();if(!response.ok)throw new Error(data.error||"删除提醒失败");onChange(undefined);setOpen(false);onToast("任务提醒已删除");}catch(error){onToast(error instanceof Error?error.message:"删除提醒失败","error");}finally{setBusy(false);}};
+  return <div className="reminder-field"><button type="button" className="reminder-trigger" onClick={show} disabled={task.status==="done"}><span>♢</span><div><strong>{task.reminder?formatReminder(task.reminder):"提醒我"}</strong><small>{task.status==="done"?"已完成任务不会发送提醒":task.reminder?task.reminder.channels.map(x=>({email:"Email",webhook:"Webhook",bark:"Bark",push:"系统通知"}[x])).join(" · "):"选择日期、时间和通知渠道"}</small></div><b>›</b></button>{open&&<div className="reminder-popover" role="dialog" aria-label="设置任务提醒"><header><strong>设置提醒</strong><button onClick={()=>setOpen(false)}>×</button></header>{quickOptions.map(option=><button key={option.value} className={localDateTime===option.value?"selected":""} onClick={()=>choose(option.value)}><span>{option.label}</span><em>{option.meta}</em></button>)}<label className="custom-reminder"><span>选择日期和时间</span><input type="datetime-local" value={localDateTime} onChange={event=>setLocalDateTime(event.target.value)}/></label><div className="reminder-channels"><span>发送到</span>{(["email","webhook","bark","push"] as NotificationChannel[]).map(channel=><button type="button" key={channel} disabled={!available(channel)} className={channels.includes(channel)?"active":""} onClick={()=>setChannels(current=>current.includes(channel)?current.filter(x=>x!==channel):[...current,channel])}>{({email:"Email",webhook:"Webhook",bark:"Bark",push:"系统通知"}[channel])}</button>)}</div>{settings&&!(["email","webhook","bark","push"] as NotificationChannel[]).some(available)&&<button className="configure-link" onClick={onOpenSettings}>先配置通知渠道</button>}<footer>{task.reminder?<button className="remove-reminder" onClick={remove} disabled={busy}>删除提醒</button>:<span/>}<button className="save-reminder" onClick={save} disabled={busy||!localDateTime||!channels.length}>{busy?"保存中…":"保存提醒"}</button></footer></div>}</div>;
+}
+
 function SettingsDrawer({
   token,
   email,
@@ -1501,6 +1526,17 @@ function SettingsDrawer({
   const [mcpExpiry, setMcpExpiry] = useState("90");
   const [mcpRawToken, setMcpRawToken] = useState("");
   const [mcpBusy, setMcpBusy] = useState(false);
+  const [notification,setNotification]=useState<NotificationSettings>();
+  const [pushDevices,setPushDevices]=useState<PushDevice[]>([]);
+  const [notificationBusy,setNotificationBusy]=useState(false);
+  const [notificationMessage,setNotificationMessage]=useState("");
+
+  const loadNotification=useCallback(async()=>{if(!token)return;const [response,devicesResponse]=await Promise.all([fetch("/api/notification-settings",{headers:authHeaders(token)}),fetch("/api/push-subscriptions",{headers:authHeaders(token)})]),data=await response.json(),devices=await devicesResponse.json();if(!response.ok)throw new Error(data.error||"读取通知设置失败");setNotification(data);if(devicesResponse.ok)setPushDevices(devices);},[token]);
+  useEffect(()=>{if(tab==="notifications"||tab==="general")void loadNotification().catch(error=>setNotificationMessage(error instanceof Error?error.message:"读取通知设置失败"));},[tab,loadNotification]);
+  const saveNotification=async()=>{if(!notification)return;setNotificationBusy(true);setNotificationMessage("");try{const response=await fetch("/api/notification-settings",{method:"PUT",headers:authHeaders(token,true),body:JSON.stringify(notification)}),data=await response.json();if(!response.ok)throw new Error(data.error||"保存通知设置失败");setNotification({...data,webhookSecret:"",barkKey:""});setNotificationMessage("通知设置已安全保存");}catch(error){setNotificationMessage(error instanceof Error?error.message:"保存通知设置失败");}finally{setNotificationBusy(false);}};
+  const testNotification=async(channel:NotificationChannel)=>{setNotificationBusy(true);setNotificationMessage("");try{const response=await fetch("/api/notification-settings/test",{method:"POST",headers:authHeaders(token,true),body:JSON.stringify({channel})}),data=await response.json();if(!response.ok)throw new Error(data.error||"测试通知发送失败");setNotificationMessage("测试通知已发送");}catch(error){setNotificationMessage(error instanceof Error?error.message:"测试通知发送失败");}finally{setNotificationBusy(false);}};
+  const enableSystemNotifications=async()=>{if(!notification?.pushAvailable)return setNotificationMessage("服务端尚未配置 Web Push VAPID 密钥");setNotificationBusy(true);try{if(!("serviceWorker" in navigator)||!("PushManager" in window))throw new Error("当前浏览器不支持系统通知");const permission=await Notification.requestPermission();if(permission!=="granted")throw new Error("系统通知权限未授予");const registration=await navigator.serviceWorker.ready,raw=notification.vapidPublicKey.replace(/-/g,"+").replace(/_/g,"/"),padding="=".repeat((4-raw.length%4)%4),bytes=Uint8Array.from(atob(raw+padding),x=>x.charCodeAt(0));const subscription=await registration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:bytes});const response=await fetch("/api/push-subscriptions",{method:"POST",headers:authHeaders(token,true),body:JSON.stringify({...subscription.toJSON(),deviceName:navigator.platform||"浏览器设备"})}),data=await response.json();if(!response.ok)throw new Error(data.error||"保存设备订阅失败");await loadNotification();setNotificationMessage("当前设备已启用系统通知");}catch(error){setNotificationMessage(error instanceof Error?error.message:"启用系统通知失败");}finally{setNotificationBusy(false);}};
+  const removePushDevice=async(id:string)=>{setNotificationBusy(true);try{const device=pushDevices.find(item=>item.id===id);if(device&&"serviceWorker" in navigator){const current=await (await navigator.serviceWorker.ready).pushManager.getSubscription();if(current?.endpoint===device.endpoint)await current.unsubscribe();}const response=await fetch(`/api/push-subscriptions?id=${encodeURIComponent(id)}`,{method:"DELETE",headers:authHeaders(token)}),data=await response.json();if(!response.ok)throw new Error(data.error||"停用设备失败");await loadNotification();setNotificationMessage("设备系统通知已停用");}catch(error){setNotificationMessage(error instanceof Error?error.message:"停用设备失败");}finally{setNotificationBusy(false);}};
 
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -1724,6 +1760,7 @@ function SettingsDrawer({
 
   const tabs: { key: SettingsTab; icon: string; label: string }[] = [
     { key: "general", icon: "◫", label: "通用" },
+    { key: "notifications", icon: "♢", label: "通知与提醒" },
     { key: "smtp", icon: "@", label: "邮件服务" },
     { key: "ai", icon: "✦", label: "AI 服务" },
     { key: "mcp", icon: "⌘", label: "MCP 接入" },
@@ -1785,10 +1822,23 @@ function SettingsDrawer({
                   </div>
                   <div className="setting-row static-row">
                     <div><strong>时区</strong><span>任务日期按你的默认时区显示</span></div>
-                    <b>Asia/Shanghai</b>
+                    <b>{notification?.timezone||"Asia/Shanghai"}</b>
                   </div>
                 </div>
                 <p className="settings-note">偏好会自动保存在当前设备。</p>
+              </section>
+            )}
+            {tab === "notifications" && (
+              <section className="settings-section">
+                <div className="settings-title"><h3>通知与提醒</h3><p>设置提醒时区、默认渠道和当前设备的系统通知。</p></div>
+                {notification&&<div className="ai-settings-card notification-settings-card">
+                  <label>提醒时区<input list="gtd-timezones" value={notification.timezone} onChange={event=>setNotification({...notification,timezone:event.target.value})}/><datalist id="gtd-timezones"><option value="Asia/Shanghai"/><option value="Asia/Tokyo"/><option value="Europe/London"/><option value="America/New_York"/><option value="America/Los_Angeles"/><option value={Intl.DateTimeFormat().resolvedOptions().timeZone}/></datalist></label>
+                  <div className="notification-channel-card"><div><strong>Email</strong><span>{notification.emailAvailable?`发送到 ${email}`:"请先配置邮件服务"}</span></div><button className={notification.emailEnabled?"channel-on":""} disabled={!notification.emailAvailable} onClick={()=>setNotification({...notification,emailEnabled:!notification.emailEnabled})}>{notification.emailEnabled?"已启用":"未启用"}</button><button onClick={()=>void testNotification("email")} disabled={!notification.emailAvailable||notificationBusy}>测试</button></div>
+                  <div className="notification-channel-form"><div className="notification-channel-card"><div><strong>Webhook</strong><span>以签名 JSON 请求发送任务提醒</span></div><button className={notification.webhookEnabled?"channel-on":""} onClick={()=>setNotification({...notification,webhookEnabled:!notification.webhookEnabled})}>{notification.webhookEnabled?"已启用":"未启用"}</button><button onClick={()=>void testNotification("webhook")} disabled={!notification.hasWebhookSecret||!notification.webhookUrl||notificationBusy}>测试</button></div><label>公开 HTTPS 地址<input value={notification.webhookUrl} onChange={event=>setNotification({...notification,webhookUrl:event.target.value})} placeholder="https://example.com/gtd-hook"/></label><label>签名密钥<input type="password" value={notification.webhookSecret||""} onChange={event=>setNotification({...notification,webhookSecret:event.target.value})} placeholder={notification.hasWebhookSecret?"已保存；留空继续使用":"留空时自动生成"}/></label></div>
+                  <div className="notification-channel-form"><div className="notification-channel-card"><div><strong>Bark</strong><span>发送到 iPhone 的 Bark 客户端</span></div><button className={notification.barkEnabled?"channel-on":""} onClick={()=>setNotification({...notification,barkEnabled:!notification.barkEnabled})}>{notification.barkEnabled?"已启用":"未启用"}</button><button onClick={()=>void testNotification("bark")} disabled={!notification.hasBarkKey||notificationBusy}>测试</button></div><label>Bark Server<input value={notification.barkBaseUrl} onChange={event=>setNotification({...notification,barkBaseUrl:event.target.value})}/></label><label>Device Key<input type="password" value={notification.barkKey||""} onChange={event=>setNotification({...notification,barkKey:event.target.value})} placeholder={notification.hasBarkKey?"已保存；留空继续使用":"输入 Bark Device Key"}/></label></div>
+                  <div><div className="notification-channel-card"><div><strong>系统通知</strong><span>{notification.pushSubscriptionCount?`已连接 ${notification.pushSubscriptionCount} 台设备`:"支持 Windows、Android 和已安装到主屏幕的 iPhone PWA"}</span></div><button className={notification.pushSubscriptionCount?"channel-on":""} onClick={()=>void enableSystemNotifications()} disabled={notificationBusy}>{notification.pushSubscriptionCount?"添加此设备":"启用"}</button><button onClick={()=>void testNotification("push")} disabled={!notification.pushSubscriptionCount||notificationBusy}>测试</button></div>{pushDevices.length>0&&<div className="push-device-list">{pushDevices.map(device=><div key={device.id}><span><strong>{device.deviceName}</strong><small>最近连接 {new Date(device.lastSeenAt).toLocaleDateString("zh-CN")}</small></span><button onClick={()=>void removePushDevice(device.id)} disabled={notificationBusy}>停用</button></div>)}</div>}</div>
+                  {notificationMessage&&<div className="settings-message">{notificationMessage}</div>}<div className="settings-actions"><button className="primary" onClick={()=>void saveNotification()} disabled={notificationBusy}>{notificationBusy?"处理中…":"保存通知设置"}</button></div>
+                </div>}
               </section>
             )}
             {tab === "smtp" && (
@@ -1935,7 +1985,7 @@ export function GTDApp() {
   }, []);
   const requestConfirm = useCallback((options: { title:string; description:string; confirmLabel:string; danger?:boolean }) =>
     new Promise<boolean>((resolve) => setDialog({ id:uid(), kind:"confirm", ...options, resolve:(value) => resolve(value === true) })), []);
-  const requestPrompt = useCallback((options: { title:string; description:string; confirmLabel:string; placeholder?:string }) =>
+  const requestPrompt = useCallback((options: { title:string; description:string; confirmLabel:string; placeholder?:string; initialValue?:string }) =>
     new Promise<string | null>((resolve) => setDialog({ id:uid(), kind:"prompt", ...options, resolve:(value) => resolve(typeof value === "string" ? value : null) })), []);
   useEffect(() => {
     fetch("/api/auth/config")
@@ -2117,6 +2167,8 @@ export function GTDApp() {
     return () => window.clearInterval(interval);
   }, [ready, token, pushToast]);
   useEffect(() => setSubtaskTitle(""), [selectedId]);
+  useEffect(()=>{if(!ready)return;const taskId=new URLSearchParams(window.location.search).get("task");if(taskId&&state.tasks.some(task=>task.id===taskId))setSelectedId(taskId);},[ready,state.tasks]);
+  useEffect(()=>{if(!ready||!token||!("serviceWorker" in navigator))return;void navigator.serviceWorker.ready.then(registration=>registration.pushManager.getSubscription()).then(subscription=>{if(!subscription)return;return fetch("/api/push-subscriptions",{method:"POST",headers:authHeaders(token,true),body:JSON.stringify({...subscription.toJSON(),deviceName:navigator.platform||"浏览器设备"})});}).catch(()=>undefined);},[ready,token]);
   const setTask = useCallback(
     (id: string, patch: Partial<Task>) =>
       setState((current) => ({
@@ -2181,6 +2233,41 @@ export function GTDApp() {
     removeTaskTree(task.id);
     if (selectedId === task.id) setSelectedId(undefined);
     pushToast(descendants ? `任务及 ${descendants} 个子任务已删除` : "任务已删除");
+  };
+  const editProject = async (project: Project) => {
+    const name = await requestPrompt({
+      title: "编辑项目",
+      description: "修改项目名称，关联的任务会继续保留在此项目中。",
+      confirmLabel: "保存修改",
+      placeholder: "输入项目名称",
+      initialValue: project.name,
+    });
+    const nextName = name?.trim();
+    if (!nextName || nextName === project.name) return;
+    setState((current) => ({
+      ...current,
+      projects: current.projects.map((item) => item.id === project.id ? { ...item, name: nextName } : item),
+    }));
+    pushToast(`项目已重命名为“${nextName}”`);
+  };
+  const deleteProjectWithConfirmation = async (project: Project) => {
+    const taskCount = state.tasks.filter((task) => task.projectId === project.id).length;
+    const approved = await requestConfirm({
+      title: `删除“${project.name}”？`,
+      description: taskCount
+        ? `项目删除后，项目中的 ${taskCount} 个任务会保留并移到“无项目”。此操作无法撤销。`
+        : "项目将被永久删除，此操作无法撤销。",
+      confirmLabel: "删除项目",
+      danger: true,
+    });
+    if (!approved) return;
+    setState((current) => ({
+      ...current,
+      projects: current.projects.filter((item) => item.id !== project.id),
+      tasks: current.tasks.map((task) => task.projectId === project.id ? { ...task, projectId: undefined } : task),
+    }));
+    if (projectFilter === project.id) setProjectFilter(undefined);
+    pushToast(taskCount ? `项目已删除，${taskCount} 个任务已移到“无项目”` : "项目已删除");
   };
   const projectOptions: SelectOption[] = [
     { value: "", label: "无项目", icon: "—" },
@@ -2463,7 +2550,7 @@ export function GTDApp() {
           ))}
         </nav>
         <div className="projects">
-          <div>
+          <div className="projects-header">
             <span>我的项目</span>
             <button
               onClick={async () => {
@@ -2480,26 +2567,24 @@ export function GTDApp() {
             </button>
           </div>
           {state.projects.map((project) => (
-            <button
-              key={project.id}
-              className={projectFilter === project.id ? "active" : ""}
-              onClick={() => {
-                setProjectFilter(project.id);
-                setView("projects");
-                setNavOpen(false);
-              }}
-            >
-              <i style={{ background: project.color }} />
-              <span>{project.name}</span>
-              <b>
-                {
-                  state.tasks.filter(
-                    (task) =>
-                      task.projectId === project.id && task.status !== "done",
-                  ).length
-                }
-              </b>
-            </button>
+            <div key={project.id} className={`project-item ${projectFilter === project.id ? "active" : ""}`}>
+              <button
+                className="project-link"
+                onClick={() => {
+                  setProjectFilter(project.id);
+                  setView("projects");
+                  setNavOpen(false);
+                }}
+              >
+                <i style={{ background: project.color }} />
+                <span>{project.name}</span>
+                <b>{state.tasks.filter((task) => task.projectId === project.id && task.status !== "done").length}</b>
+              </button>
+              <div className="project-actions">
+                <button onClick={() => void editProject(project)} aria-label={`编辑项目 ${project.name}`} title="编辑项目"><Icon name="edit" size={14} /></button>
+                <button className="danger" onClick={() => void deleteProjectWithConfirmation(project)} aria-label={`删除项目 ${project.name}`} title="删除项目"><Icon name="trash" size={14} /></button>
+              </div>
+            </div>
           ))}
         </div>
         <div className="sidebar-foot">
@@ -2872,6 +2957,7 @@ export function GTDApp() {
               </div>
             </label>
           </section>
+          {token&&<ReminderEditor task={selected} token={token} onChange={(reminder)=>setTask(selected.id,{reminder})} onOpenSettings={()=>{setSettingsInitialTab("notifications");setSettingsOpen(true);}} onToast={pushToast}/>}
           <section className="detail-section">
             <label>
               <span>前置任务</span>

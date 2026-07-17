@@ -6,6 +6,7 @@ import {
   primaryKey,
   text,
   timestamp,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
@@ -115,3 +116,39 @@ export const aiConfigs = pgTable("ai_configs", {
   encryptedKey: text("encrypted_key").notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
 });
+
+export const notificationSettings = pgTable("notification_settings", {
+  userId: text("user_id").primaryKey(),
+  timezone: text("timezone").notNull().default("Asia/Shanghai"),
+  emailEnabled: boolean("email_enabled").notNull().default(true),
+  webhookEnabled: boolean("webhook_enabled").notNull().default(false),
+  webhookUrl: text("webhook_url").notNull().default(""),
+  encryptedWebhookSecret: text("encrypted_webhook_secret").notNull().default(""),
+  barkEnabled: boolean("bark_enabled").notNull().default(false),
+  barkBaseUrl: text("bark_base_url").notNull().default("https://api.day.app"),
+  encryptedBarkKey: text("encrypted_bark_key").notNull().default(""),
+  updatedAt: timestamp("updated_at", { withTimezone:true }).notNull(),
+});
+
+export const taskReminders = pgTable("task_reminders", {
+  id:text("id").primaryKey(), userId:text("user_id").notNull(), taskId:text("task_id").notNull(),
+  remindAt:timestamp("remind_at", { withTimezone:true }).notNull(), timezone:text("timezone").notNull(),
+  channels:text("channels").array().notNull(), status:text("status").notNull().default("pending"),
+  createdAt:timestamp("created_at", { withTimezone:true }).notNull(), updatedAt:timestamp("updated_at", { withTimezone:true }).notNull(),
+}, (table) => [uniqueIndex("task_reminders_task_idx").on(table.taskId), index("task_reminders_due_idx").on(table.status,table.remindAt)]);
+
+export const reminderDeliveries = pgTable("reminder_deliveries", {
+  id:text("id").primaryKey(), reminderId:text("reminder_id").notNull(), channel:text("channel").notNull(),
+  status:text("status").notNull().default("pending"), attempts:integer("attempts").notNull().default(0),
+  nextAttemptAt:timestamp("next_attempt_at", { withTimezone:true }).notNull(), lockedAt:timestamp("locked_at", { withTimezone:true }),
+  sentAt:timestamp("sent_at", { withTimezone:true }), lastError:text("last_error"),
+  createdAt:timestamp("created_at", { withTimezone:true }).notNull(), updatedAt:timestamp("updated_at", { withTimezone:true }).notNull(),
+}, (table) => [uniqueIndex("reminder_deliveries_reminder_channel_idx").on(table.reminderId,table.channel), index("reminder_deliveries_due_idx").on(table.status,table.nextAttemptAt)]);
+
+export const pushSubscriptions = pgTable("push_subscriptions", {
+  id:text("id").primaryKey(), userId:text("user_id").notNull(), endpoint:text("endpoint").notNull(),
+  p256dh:text("p256dh").notNull(), auth:text("auth").notNull(), deviceName:text("device_name").notNull().default("浏览器设备"),
+  userAgent:text("user_agent").notNull().default(""), enabled:boolean("enabled").notNull().default(true),
+  createdAt:timestamp("created_at", { withTimezone:true }).notNull(), updatedAt:timestamp("updated_at", { withTimezone:true }).notNull(),
+  lastSeenAt:timestamp("last_seen_at", { withTimezone:true }).notNull(),
+}, (table) => [uniqueIndex("push_subscriptions_endpoint_idx").on(table.endpoint), index("push_subscriptions_user_idx").on(table.userId)]);

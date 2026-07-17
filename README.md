@@ -1,5 +1,11 @@
 # GTD Flow — VPS + PostgreSQL
 
+## 任务提醒
+
+任务可设置一个 Todo 风格的提醒时间，并同时发送到 Email、签名 Webhook、Bark 和已授权的 PWA 系统通知。提醒由独立 `reminder-worker` 容器处理，即使浏览器没有打开也会发送。
+
+启用 PWA 系统通知前运行 `npx web-push generate-vapid-keys`，然后配置 `VAPID_PUBLIC_KEY`、`VAPID_PRIVATE_KEY` 和 `VAPID_SUBJECT`。iPhone 需要 iOS 16.4 或更高版本，并先把网站添加到主屏幕。
+
 自托管的中文 GTD Web App，包含任务管理、可拖拽甘特图、邮箱验证码登录和用户自带密钥的 AI 任务拆分。
 
 ## 架构

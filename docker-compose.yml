@@ -34,6 +34,10 @@ services:
       SMTP_USER: ${SMTP_USER:?set SMTP_USER in .env}
       SMTP_PASS: ${SMTP_PASS:?set SMTP_PASS in .env}
       MAIL_FROM: ${MAIL_FROM:?set MAIL_FROM in .env}
+      DOMAIN: ${DOMAIN:-localhost}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:admin@example.com}
     expose:
       - "3000"
     healthcheck:
@@ -41,6 +45,26 @@ services:
       interval: 10s
       timeout: 5s
       retries: 12
+
+  reminder-worker:
+    build: .
+    restart: unless-stopped
+    command: ["node", "dist-worker/reminders.mjs"]
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      PGHOST: db
+      PGPORT: 5432
+      PGDATABASE: ${POSTGRES_DB:-gtdflow}
+      PGUSER: ${POSTGRES_USER:-gtdflow}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-4}
+      AI_ENCRYPTION_KEY: ${AI_ENCRYPTION_KEY:?set AI_ENCRYPTION_KEY in .env}
+      DOMAIN: ${DOMAIN:-localhost}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:admin@example.com}
 
   caddy:
     image: caddy:2-alpine

@@ -49,6 +49,9 @@ jobs:
       AI_ENCRYPTION_KEY: ${{ secrets.AI_ENCRYPTION_KEY }}
       BOOTSTRAP_TOKEN: ${{ secrets.BOOTSTRAP_TOKEN }}
       ADMIN_EMAIL: ${{ secrets.ADMIN_EMAIL }}
+      VAPID_PUBLIC_KEY: ${{ vars.VAPID_PUBLIC_KEY }}
+      VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+      VAPID_SUBJECT: ${{ vars.VAPID_SUBJECT }}
 
     steps:
       - name: Check out source
@@ -174,6 +177,7 @@ jobs:
               "APP_IMAGE", "DOMAIN", "APP_PORT", "POSTGRES_DB", "POSTGRES_USER",
               "POSTGRES_PASSWORD", "DB_POOL_SIZE", "AUTH_SECRET",
               "AI_ENCRYPTION_KEY", "BOOTSTRAP_TOKEN", "ADMIN_EMAIL",
+              "VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY", "VAPID_SUBJECT",
           ]
 
           def quote(value: str) -> str:

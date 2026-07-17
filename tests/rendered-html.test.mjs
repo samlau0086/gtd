@@ -26,6 +26,10 @@ test("ships the GTD Flow product shell", async () => {
   assert.match(app, /function ToastStack/);
   assert.match(app, /function TaskContextMenu/);
   assert.match(app, /deleteTaskWithConfirmation/);
+  assert.match(app, /editProject/);
+  assert.match(app, /deleteProjectWithConfirmation/);
+  assert.match(app, /编辑项目/);
+  assert.match(app, /删除项目/);
   assert.match(app, /onContextMenu/);
   assert.match(app, /beginCreateRange/);
   assert.match(app, /onDoubleClick/);
@@ -54,7 +58,32 @@ test("ships an installable Chrome app experience", async () => {
   assert.match(installer, /serviceWorker\.register/);
   assert.match(worker, /event\.request\.mode !== "navigate"/);
   assert.match(worker, /offline\.html/);
+  assert.match(worker, /notificationclick/);
+  assert.match(worker, /showNotification/);
   assert.match(offline, /重新连接/);
+});
+
+test("ships reliable multi-channel task reminders", async () => {
+  const [app, migration, notifications, delivery, worker, compose] = await Promise.all([
+    readFile(new URL("../app/GTDApp.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../postgres/migrations/006_task_reminders.sql", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/_lib/notifications.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/_lib/notification-delivery.ts", import.meta.url), "utf8"),
+    readFile(new URL("../worker/reminders.ts", import.meta.url), "utf8"),
+    readFile(new URL("../docker-compose.prod.yml", import.meta.url), "utf8"),
+  ]);
+  assert.match(app, /function ReminderEditor/);
+  assert.match(app, /今天晚些时候/);
+  assert.match(app, /通知与提醒/);
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS task_reminders/);
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS reminder_deliveries/);
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS push_subscriptions/);
+  assert.match(notifications, /localDateTimeToUtc/);
+  assert.match(delivery, /X-GTD-Signature/);
+  assert.match(delivery, /redirect:"manual"/);
+  assert.match(worker, /SKIP LOCKED/);
+  assert.match(worker, /INTERVAL '15 minutes'/);
+  assert.match(compose, /reminder-worker/);
 });
 
 test("ships PostgreSQL, self-hosted auth and AI security boundaries", async () => {

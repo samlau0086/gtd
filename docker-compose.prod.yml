@@ -35,6 +35,9 @@ services:
       BOOTSTRAP_TOKEN: ${BOOTSTRAP_TOKEN:?BOOTSTRAP_TOKEN is required}
       ADMIN_EMAIL: ${ADMIN_EMAIL:?ADMIN_EMAIL is required}
       DOMAIN: ${DOMAIN:?DOMAIN is required}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-}
     ports:
       - "127.0.0.1:${APP_PORT:-3300}:3000"
     healthcheck:
@@ -42,6 +45,27 @@ services:
       interval: 10s
       timeout: 5s
       retries: 12
+
+  reminder-worker:
+    image: ${APP_IMAGE:?APP_IMAGE is required}
+    pull_policy: always
+    restart: unless-stopped
+    command: ["node", "dist-worker/reminders.mjs"]
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      PGHOST: db
+      PGPORT: 5432
+      PGDATABASE: ${POSTGRES_DB:-gtdflow}
+      PGUSER: ${POSTGRES_USER:-gtdflow}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-4}
+      AI_ENCRYPTION_KEY: ${AI_ENCRYPTION_KEY:?AI_ENCRYPTION_KEY is required}
+      DOMAIN: ${DOMAIN:?DOMAIN is required}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-}
 
 volumes:
   postgres_data:
