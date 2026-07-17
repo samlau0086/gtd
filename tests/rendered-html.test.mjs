@@ -44,6 +44,25 @@ test("ships the GTD Flow product shell", async () => {
   );
 });
 
+test("ships project theme settings across task views", async () => {
+  const [app, styles, migration] = await Promise.all([
+    readFile(new URL("../app/GTDApp.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+    readFile(new URL("../postgres/migrations/007_project_theme_colors.sql", import.meta.url), "utf8"),
+  ]);
+  assert.match(app, /function ProjectEditorDialog/);
+  assert.match(app, /更多设置/);
+  assert.match(app, /backgroundColor/);
+  assert.match(app, /textColor/);
+  assert.match(app, /borderColor/);
+  assert.ok((app.match(/backgroundColor: "#/g) || []).length >= 10);
+  assert.match(styles, /task-row\.project-themed/);
+  assert.match(styles, /project-theme-presets/);
+  assert.match(migration, /background_color/);
+  assert.match(migration, /text_color/);
+  assert.match(migration, /border_color/);
+});
+
 test("ships an installable Chrome app experience", async () => {
   const [manifest, installer, worker, offline] = await Promise.all([
     readFile(new URL("../app/manifest.ts", import.meta.url), "utf8"),

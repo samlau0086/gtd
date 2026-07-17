@@ -1096,6 +1096,17 @@ select:focus-visible {
   background: #293031;
   border-color: #3d4949;
 }
+.task-row.project-themed {
+  background: var(--project-background);
+  color: var(--project-text);
+  border-color: var(--project-border);
+}
+.task-row.project-themed:hover { background: var(--project-background); filter: brightness(1.08); }
+.task-row.project-themed.active { background: var(--project-background); border-color: var(--project-border); box-shadow: inset 3px 0 0 var(--project-border), 0 0 0 1px var(--project-border); }
+.task-row.project-themed :is(.task-copy strong, .task-meta, .task-meta span, .star) { color: inherit; }
+.task-row.project-themed .task-meta { opacity: .72; }
+.task-row.project-themed .check { border-color: var(--project-border); color: var(--project-background); }
+.task-row.project-themed .check.checked { background: var(--project-border); border-color: var(--project-border); }
 .check {
   width: 22px;
   height: 22px;
@@ -1767,6 +1778,8 @@ select:focus-visible {
   color: #697574;
   font-size: 8px;
 }
+.gantt-names button.project-themed small { color: inherit; opacity: .68; }
+.gantt-names button.project-themed:hover { filter: brightness(1.08); }
 .gantt-canvas {
   position: absolute;
   top: 42px;
@@ -2001,6 +2014,48 @@ select:focus-visible {
 .friendly-dialog footer button.primary { background: var(--accent); color: #10201f; }
 .friendly-dialog footer button.danger { background: #d94e48; color: white; }
 .friendly-dialog footer button:disabled { opacity: .45; }
+
+.project-editor-dialog {
+  width: min(520px, 100%);
+  padding: 22px;
+  border: 1px solid #3b4748;
+  border-radius: 16px;
+  background: #1d2324;
+  box-shadow: 0 30px 90px #000c;
+}
+.project-editor-dialog > header { display: flex; align-items: center; gap: 14px; }
+.project-editor-dialog h2 { margin: 0 0 6px; font-size: 16px; }
+.project-editor-dialog header p { margin: 0; color: #8d9998; font-size: 10px; line-height: 1.5; }
+.project-editor-preview { width: 54px; height: 46px; flex: 0 0 auto; display: flex; align-items: center; justify-content: center; gap: 6px; border: 2px solid; border-radius: 11px; font-size: 12px; font-weight: 800; }
+.project-editor-preview i { width: 7px; height: 7px; border-radius: 50%; }
+.project-name-field { display: block; margin-top: 20px; }
+.project-name-field > span, .project-color-fields label > span { display: block; margin-bottom: 7px; color: #899594; font-size: 9px; font-weight: 700; }
+.project-name-field input { width: 100%; }
+.project-more-toggle { width: 100%; min-height: 52px; display: flex; align-items: center; justify-content: space-between; margin-top: 13px; padding: 8px 12px; border: 1px solid #343e3f; border-radius: 10px; background: #242b2c; color: #d3dcdb; text-align: left; }
+.project-more-toggle:hover, .project-more-toggle.expanded { border-color: #4d6967; background: #283232; }
+.project-more-toggle span, .project-more-toggle b, .project-more-toggle small { display: block; }
+.project-more-toggle b { font-size: 10px; }
+.project-more-toggle small { margin-top: 4px; color: #788584; font-size: 8px; font-weight: 400; }
+.project-more-toggle > i { color: var(--accent); font-size: 16px; font-style: normal; }
+.project-theme-settings { margin-top: 9px; padding: 13px; border: 1px solid #343e3f; border-radius: 11px; background: #181d1e; }
+.project-theme-presets { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
+.project-theme-presets button { height: 36px; border: 2px solid; border-radius: 8px; font-size: 9px; font-weight: 800; opacity: .72; }
+.project-theme-presets button:hover { opacity: 1; transform: translateY(-1px); }
+.project-theme-presets button.selected { opacity: 1; outline: 2px solid #e8fffc; outline-offset: 2px; }
+.project-color-fields { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; margin-top: 16px; }
+.project-color-fields label > div { height: 38px; display: flex; align-items: center; gap: 7px; padding: 5px 8px; border: 1px solid #35403f; border-radius: 8px; background: #202627; }
+.project-color-fields input[type="color"] { width: 25px; height: 25px; padding: 0; border: 0; border-radius: 6px; background: transparent; cursor: pointer; }
+.project-color-fields code { color: #aeb8b7; font-size: 8px; }
+.project-editor-dialog > footer { display: flex; justify-content: flex-end; gap: 9px; margin-top: 18px; }
+.project-editor-dialog > footer button { min-width: 86px; padding: 9px 15px; border-radius: 8px; background: #2a3132; color: #bdc7c6; }
+.project-editor-dialog > footer button.primary { background: var(--accent); color: #10201f; }
+.project-editor-dialog > footer button:disabled { opacity: .45; }
+@media (max-width: 540px) {
+  .project-editor-dialog { padding: 18px; }
+  .project-theme-presets { grid-template-columns: repeat(4, 1fr); }
+  .project-color-fields { grid-template-columns: 1fr; }
+  .project-color-fields label > div { justify-content: space-between; }
+}
 
 .task-context-menu {
   position: fixed;
@@ -2481,7 +2536,7 @@ select:focus-visible {
   background: #f7faf9;
   border-color: var(--line);
 }
-:root[data-theme="light"] :is(.workspace, .settings-drawer, .detail, .modal, .friendly-dialog, .task-context-menu, .select-popover, .reminder-popover) {
+:root[data-theme="light"] :is(.workspace, .settings-drawer, .detail, .modal, .friendly-dialog, .project-editor-dialog, .task-context-menu, .select-popover, .reminder-popover) {
   background: var(--panel);
   border-color: var(--line);
   box-shadow: 0 22px 60px #405b5724;
@@ -2491,7 +2546,7 @@ select:focus-visible {
   border-color: var(--line);
   color: var(--text);
 }
-:root[data-theme="light"] :is(.auth-card input, .modal input, .modal textarea, .ai-settings-card input, .ai-settings-card select, .custom-reminder input, .friendly-dialog input, .detail input, .detail textarea, .detail select) {
+:root[data-theme="light"] :is(.auth-card input, .modal input, .modal textarea, .ai-settings-card input, .ai-settings-card select, .custom-reminder input, .friendly-dialog input, .project-editor-dialog input, .detail input, .detail textarea, .detail select) {
   background: #fff;
   border-color: #cbd8d5;
   color: var(--text);
@@ -2514,6 +2569,8 @@ select:focus-visible {
   color: var(--text);
 }
 :root[data-theme="light"] .project-actions { background: linear-gradient(90deg, transparent, #eaf0ef 12px); }
+:root[data-theme="light"] :is(.project-more-toggle, .project-color-fields label > div) { background: #f1f5f4; border-color: var(--line); color: var(--text); }
+:root[data-theme="light"] .project-theme-settings { background: #f8faf9; border-color: var(--line); }
 :root[data-theme="light"] .project-item.active .project-actions { background: linear-gradient(90deg, transparent, #dce9e7 12px); }
 :root[data-theme="light"] :is(.sidebar nav button b, .project-link b, .notification-channel-card > button, .reminder-channels button) {
   background: #dfe7e5;

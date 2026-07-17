@@ -2,6 +2,7 @@
 
 import {
   FormEvent,
+  CSSProperties,
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
   ReactNode,
@@ -14,7 +15,8 @@ import {
 import { createPortal } from "react-dom";
 
 type Status = "inbox" | "next" | "waiting" | "scheduled" | "someday" | "done";
-type Project = { id: string; name: string; color: string; revision?: number; updatedAt?: string };
+type Project = { id: string; name: string; color: string; backgroundColor?: string; textColor?: string; borderColor?: string; revision?: number; updatedAt?: string };
+type ProjectTheme = { backgroundColor: string; textColor: string; borderColor: string };
 type Tag = { id: string; name: string; revision?: number; updatedAt?: string };
 type Task = {
   id: string;
@@ -81,6 +83,25 @@ type ViewKey =
   | "completed";
 
 const uid = () => crypto.randomUUID();
+const PROJECT_THEMES: ProjectTheme[] = [
+  { backgroundColor: "#173F3B", textColor: "#D9FFF9", borderColor: "#69D2C8" },
+  { backgroundColor: "#352C58", textColor: "#F1ECFF", borderColor: "#A78BFA" },
+  { backgroundColor: "#4B371D", textColor: "#FFF2D2", borderColor: "#F6B85A" },
+  { backgroundColor: "#4A2928", textColor: "#FFE9E7", borderColor: "#F08078" },
+  { backgroundColor: "#203C59", textColor: "#E5F3FF", borderColor: "#67B7F7" },
+  { backgroundColor: "#30401F", textColor: "#EFFFD8", borderColor: "#9BCB63" },
+  { backgroundColor: "#4A2740", textColor: "#FFE8F7", borderColor: "#E684C3" },
+  { backgroundColor: "#493121", textColor: "#FFF0E4", borderColor: "#E69A61" },
+  { backgroundColor: "#243C45", textColor: "#E4F9FF", borderColor: "#67C6D9" },
+  { backgroundColor: "#3E3342", textColor: "#F8ECFA", borderColor: "#C59ACB" },
+  { backgroundColor: "#3F3D21", textColor: "#FFFBD8", borderColor: "#D4CB62" },
+  { backgroundColor: "#263D32", textColor: "#E6FFF1", borderColor: "#72C998" },
+];
+const themeForProject = (project?: Project): ProjectTheme => project ? ({
+  backgroundColor: project.backgroundColor || project.color || PROJECT_THEMES[0].backgroundColor,
+  textColor: project.textColor || (project.backgroundColor ? PROJECT_THEMES[0].textColor : "#102120"),
+  borderColor: project.borderColor || project.color || PROJECT_THEMES[0].borderColor,
+}) : PROJECT_THEMES[0];
 const DAY = 86400000;
 const iso = (date: Date) => date.toISOString().slice(0, 10);
 const addDays = (date: string, days: number) =>
@@ -109,9 +130,9 @@ const seedState = (): AppState => {
   const now = today();
   return {
     projects: [
-      { id: "p-launch", name: "新版产品发布", color: "#69d2c8" },
-      { id: "p-home", name: "生活管理", color: "#a78bfa" },
-      { id: "p-learn", name: "学习成长", color: "#f6b85a" },
+      { id: "p-launch", name: "新版产品发布", color: PROJECT_THEMES[0].borderColor, ...PROJECT_THEMES[0] },
+      { id: "p-home", name: "生活管理", color: PROJECT_THEMES[1].borderColor, ...PROJECT_THEMES[1] },
+      { id: "p-learn", name: "学习成长", color: PROJECT_THEMES[2].borderColor, ...PROJECT_THEMES[2] },
     ],
     tags: [
       { id: "tag-focus", name: "深度工作" },
@@ -448,9 +469,16 @@ function TaskRow({
   stepProgress?: { done: number; total: number };
   onOpenMenu: (event: ReactMouseEvent<HTMLElement>) => void;
 }) {
+  const theme = themeForProject(project);
+  const projectStyle = project ? ({
+    "--project-background": theme.backgroundColor,
+    "--project-text": theme.textColor,
+    "--project-border": theme.borderColor,
+  } as CSSProperties) : undefined;
   return (
     <article
-      className={`task-row ${active ? "active" : ""}`}
+      className={`task-row ${project ? "project-themed" : ""} ${active ? "active" : ""}`}
+      style={projectStyle}
       onClick={onSelect}
       onContextMenu={onOpenMenu}
     >
@@ -471,7 +499,7 @@ function TaskRow({
         <div className="task-meta">
           {project && (
             <span>
-              <i style={{ background: project.color }} />
+              <i style={{ background: theme.borderColor }} />
               {project.name}
             </span>
           )}
@@ -534,6 +562,56 @@ function FriendlyDialog({ request, onClose }: { request: DialogRequest; onClose:
           <button onClick={() => finish(request.kind === "confirm" ? false : null)}>取消</button>
           <button className={request.danger ? "danger" : "primary"} disabled={request.kind === "prompt" && !value.trim()} onClick={() => finish(request.kind === "confirm" ? true : value.trim())}>{request.confirmLabel}</button>
         </footer>
+      </section>
+    </div>,
+    document.body,
+  );
+}
+
+function ProjectEditorDialog({ project, defaultTheme, onSave, onClose }: {
+  project?: Project;
+  defaultTheme: ProjectTheme;
+  onSave: (value: { name: string } & ProjectTheme) => void;
+  onClose: () => void;
+}) {
+  const initialTheme = project ? themeForProject(project) : defaultTheme;
+  const [name, setName] = useState(project?.name || "");
+  const [theme, setTheme] = useState(initialTheme);
+  const [expanded, setExpanded] = useState(false);
+  const titleId = `project-editor-${project?.id || "new"}`;
+  const save = () => {
+    if (!name.trim()) return;
+    onSave({ name: name.trim(), ...theme });
+  };
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return createPortal(
+    <div className="friendly-dialog-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <section className="project-editor-dialog" role="dialog" aria-modal="true" aria-labelledby={titleId}>
+        <header>
+          <div className="project-editor-preview" style={{ background: theme.backgroundColor, color: theme.textColor, borderColor: theme.borderColor }}><i style={{ background: theme.borderColor }} />Aa</div>
+          <div><h2 id={titleId}>{project ? "编辑项目" : "新建项目"}</h2><p>项目内任务会在列表和甘特图中使用这组颜色。</p></div>
+        </header>
+        <label className="project-name-field"><span>项目名称</span><input autoFocus maxLength={80} value={name} onChange={(event) => setName(event.target.value)} placeholder="例如：新版产品发布" onKeyDown={(event) => { if (event.key === "Enter" && !expanded) save(); }} /></label>
+        <button className={`project-more-toggle ${expanded ? "expanded" : ""}`} type="button" aria-expanded={expanded} onClick={() => setExpanded((value) => !value)}><span><b>更多设置</b><small>{expanded ? "收起颜色设置" : "使用项目主题颜色"}</small></span><i>{expanded ? "⌃" : "⌄"}</i></button>
+        {expanded && <div className="project-theme-settings">
+          <div className="project-theme-presets" aria-label="预设主题">
+            {PROJECT_THEMES.map((preset, index) => <button key={`${preset.backgroundColor}-${index}`} type="button" className={preset.backgroundColor === theme.backgroundColor && preset.textColor === theme.textColor && preset.borderColor === theme.borderColor ? "selected" : ""} aria-label={`主题 ${index + 1}`} title={`主题 ${index + 1}`} style={{ background: preset.backgroundColor, color: preset.textColor, borderColor: preset.borderColor }} onClick={() => setTheme(preset)}>Aa</button>)}
+          </div>
+          <div className="project-color-fields">
+            {([
+              ["backgroundColor", "背景颜色"],
+              ["textColor", "文字颜色"],
+              ["borderColor", "边框颜色"],
+            ] as const).map(([key, label]) => <label key={key}><span>{label}</span><div><input type="color" value={theme[key]} onChange={(event) => setTheme((current) => ({ ...current, [key]: event.target.value }))} /><code>{theme[key].toUpperCase()}</code></div></label>)}
+          </div>
+        </div>}
+        <footer><button type="button" onClick={onClose}>取消</button><button type="button" className="primary" disabled={!name.trim()} onClick={save}>{project ? "保存修改" : "创建项目"}</button></footer>
       </section>
     </div>,
     document.body,
@@ -1097,19 +1175,19 @@ function Gantt({
             ))}
           </div>
           <div className="gantt-names">
-            {scheduled.map((task) => (
-              <button key={task.id} className={selectedId === task.id ? "selected" : ""} aria-selected={selectedId === task.id} onClick={() => onSelect(task.id)}>
+            {scheduled.map((task) => {
+              const project = projects.find((item) => item.id === task.projectId);
+              const theme = themeForProject(project);
+              return <button key={task.id} className={`${project ? "project-themed" : ""} ${selectedId === task.id ? "selected" : ""}`} aria-selected={selectedId === task.id} onClick={() => onSelect(task.id)} style={project ? { background: theme.backgroundColor, color: theme.textColor, borderColor: theme.borderColor } : undefined}>
                 <i
                   style={{
-                    background:
-                      projects.find((p) => p.id === task.projectId)?.color ||
-                      "#69d2c8",
+                    background: project ? theme.borderColor : "#69d2c8",
                   }}
                 />
                 <span>{task.title}</span>
                 <small>{task.estimate}天</small>
-              </button>
-            ))}
+              </button>;
+            })}
           </div>
           <div
             className="gantt-canvas"
@@ -1150,9 +1228,8 @@ function Gantt({
                     DAY,
                 ) + 1,
               );
-              const color =
-                projects.find((p) => p.id === task.projectId)?.color ||
-                "#69d2c8";
+              const project = projects.find((item) => item.id === task.projectId);
+              const theme = themeForProject(project);
               return (
                 <div
                   key={task.id}
@@ -1164,7 +1241,9 @@ function Gantt({
                     left,
                     top: row * 50 + 18,
                     width: Math.max(cell, duration * cell),
-                    background: color,
+                    background: project ? theme.backgroundColor : "#69d2c8",
+                    color: project ? theme.textColor : "#102120",
+                    border: `1px solid ${project ? theme.borderColor : "#69d2c8"}`,
                   }}
                 >
                   <span>{task.title}</span>
@@ -1971,6 +2050,7 @@ export function GTDApp() {
   const [subtaskTitle, setSubtaskTitle] = useState("");
   const [contextMenu, setContextMenu] = useState<{ taskId:string; x:number; y:number }>();
   const [dialog, setDialog] = useState<DialogRequest>();
+  const [projectEditor, setProjectEditor] = useState<{ project?: Project; defaultTheme: ProjectTheme }>();
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const loaded = useRef(false);
   const syncing = useRef(false);
@@ -2233,21 +2313,17 @@ export function GTDApp() {
     if (selectedId === task.id) setSelectedId(undefined);
     pushToast(descendants ? `任务及 ${descendants} 个子任务已删除` : "任务已删除");
   };
-  const editProject = async (project: Project) => {
-    const name = await requestPrompt({
-      title: "编辑项目",
-      description: "修改项目名称，关联的任务会继续保留在此项目中。",
-      confirmLabel: "保存修改",
-      placeholder: "输入项目名称",
-      initialValue: project.name,
-    });
-    const nextName = name?.trim();
-    if (!nextName || nextName === project.name) return;
+  const editProject = (project: Project) => setProjectEditor({ project, defaultTheme: themeForProject(project) });
+  const saveProject = (value: { name: string } & ProjectTheme) => {
+    const editing = projectEditor?.project;
     setState((current) => ({
       ...current,
-      projects: current.projects.map((item) => item.id === project.id ? { ...item, name: nextName } : item),
+      projects: editing
+        ? current.projects.map((item) => item.id === editing.id ? { ...item, ...value, color: value.borderColor } : item)
+        : [...current.projects, { id: uid(), ...value, color: value.borderColor }],
     }));
-    pushToast(`项目已重命名为“${nextName}”`);
+    setProjectEditor(undefined);
+    pushToast(editing ? `项目“${value.name}”已更新` : `项目“${value.name}”已创建`);
   };
   const deleteProjectWithConfirmation = async (project: Project) => {
     const taskCount = state.tasks.filter((task) => task.projectId === project.id).length;
@@ -2552,15 +2628,7 @@ export function GTDApp() {
           <div className="projects-header">
             <span>我的项目</span>
             <button
-              onClick={async () => {
-                const name = await requestPrompt({ title:"新建项目", description:"为一组相关行动创建清晰的结果容器。", confirmLabel:"创建项目", placeholder:"例如：新版产品发布" });
-                if (!name) return;
-                setState((current) => ({
-                  ...current,
-                  projects: [...current.projects, { id:uid(), name, color:["#69d2c8", "#a78bfa", "#f6b85a"][current.projects.length % 3] }],
-                }));
-                pushToast(`项目“${name}”已创建`);
-              }}
+              onClick={() => setProjectEditor({ defaultTheme: PROJECT_THEMES[state.projects.length % PROJECT_THEMES.length] })}
             >
               <Icon name="plus" size={16} />
             </button>
@@ -2575,12 +2643,12 @@ export function GTDApp() {
                   setNavOpen(false);
                 }}
               >
-                <i style={{ background: project.color }} />
+                <i style={{ background: themeForProject(project).borderColor }} />
                 <span>{project.name}</span>
                 <b>{state.tasks.filter((task) => task.projectId === project.id && task.status !== "done").length}</b>
               </button>
               <div className="project-actions">
-                <button onClick={() => void editProject(project)} aria-label={`编辑项目 ${project.name}`} title="编辑项目"><Icon name="edit" size={14} /></button>
+                <button onClick={() => editProject(project)} aria-label={`编辑项目 ${project.name}`} title="编辑项目"><Icon name="edit" size={14} /></button>
                 <button className="danger" onClick={() => void deleteProjectWithConfirmation(project)} aria-label={`删除项目 ${project.name}`} title="删除项目"><Icon name="trash" size={14} /></button>
               </div>
             </div>
@@ -3041,6 +3109,7 @@ export function GTDApp() {
           onToast={pushToast}
         />
       )}
+      {projectEditor && <ProjectEditorDialog project={projectEditor.project} defaultTheme={projectEditor.defaultTheme} onSave={saveProject} onClose={() => setProjectEditor(undefined)} />}
       {dialog && <FriendlyDialog key={dialog.id} request={dialog} onClose={() => setDialog(undefined)} />}
       {toasts.length > 0 && <ToastStack items={toasts} onDismiss={(id) => setToasts((current) => current.filter((item) => item.id !== id))} />}
     </main>
