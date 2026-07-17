@@ -22,6 +22,12 @@ test("ships the GTD Flow product shell", async () => {
   assert.match(app, /创建新的任务标签/);
   assert.match(app, /执行步骤/);
   assert.match(app, /removeTaskTree/);
+  assert.match(app, /function FriendlyDialog/);
+  assert.match(app, /function ToastStack/);
+  assert.match(app, /function TaskContextMenu/);
+  assert.match(app, /deleteTaskWithConfirmation/);
+  assert.match(app, /onContextMenu/);
+  assert.doesNotMatch(app, /\b(?:alert|confirm|prompt)\s*\(/);
   assert.doesNotMatch(app, /<select/);
   assert.doesNotMatch(
     `${page}${layout}${packageJson}`,

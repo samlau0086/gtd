@@ -2,6 +2,7 @@
 
 import {
   FormEvent,
+  MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
   useCallback,
   useEffect,
@@ -41,6 +42,17 @@ type DraftItem = {
   dependsOn: string[];
 };
 type AuthConfig = { mode: "self-hosted"; setupRequired?: boolean };
+type ToastItem = { id: string; message: string; type: "success" | "info" | "error" };
+type DialogRequest = {
+  id: string;
+  kind: "confirm" | "prompt";
+  title: string;
+  description: string;
+  confirmLabel: string;
+  danger?: boolean;
+  placeholder?: string;
+  resolve: (value: boolean | string | null) => void;
+};
 type SettingsTab = "general" | "smtp" | "ai" | "account" | "data";
 type UserPreferences = {
   defaultView: ViewKey;
@@ -376,6 +388,7 @@ function TaskRow({
   onToggle,
   onImportant,
   stepProgress,
+  onOpenMenu,
 }: {
   task: Task;
   active: boolean;
@@ -384,11 +397,13 @@ function TaskRow({
   onToggle: () => void;
   onImportant: () => void;
   stepProgress?: { done: number; total: number };
+  onOpenMenu: (event: ReactMouseEvent<HTMLElement>) => void;
 }) {
   return (
     <article
       className={`task-row ${active ? "active" : ""}`}
       onClick={onSelect}
+      onContextMenu={onOpenMenu}
     >
       <button
         className={`check ${task.status === "done" ? "checked" : ""}`}
@@ -441,6 +456,93 @@ function TaskRow({
         ☆
       </button>
     </article>
+  );
+}
+
+function FriendlyDialog({ request, onClose }: { request: DialogRequest; onClose: () => void }) {
+  const [value, setValue] = useState("");
+  const finish = (result: boolean | string | null) => {
+    request.resolve(result);
+    onClose();
+  };
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") finish(request.kind === "confirm" ? false : null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+  return createPortal(
+    <div className="friendly-dialog-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && finish(request.kind === "confirm" ? false : null)}>
+      <section className="friendly-dialog" role="dialog" aria-modal="true" aria-labelledby={`dialog-${request.id}`}>
+        <div className={`dialog-glyph ${request.danger ? "danger" : ""}`}>{request.danger ? "!" : request.kind === "prompt" ? "+" : "?"}</div>
+        <div className="dialog-copy">
+          <h2 id={`dialog-${request.id}`}>{request.title}</h2>
+          <p>{request.description}</p>
+          {request.kind === "prompt" && <input autoFocus value={value} onChange={(event) => setValue(event.target.value)} placeholder={request.placeholder} onKeyDown={(event) => { if (event.key === "Enter" && value.trim()) finish(value.trim()); }} />}
+        </div>
+        <footer>
+          <button onClick={() => finish(request.kind === "confirm" ? false : null)}>取消</button>
+          <button className={request.danger ? "danger" : "primary"} disabled={request.kind === "prompt" && !value.trim()} onClick={() => finish(request.kind === "confirm" ? true : value.trim())}>{request.confirmLabel}</button>
+        </footer>
+      </section>
+    </div>,
+    document.body,
+  );
+}
+
+function ToastStack({ items, onDismiss }: { items: ToastItem[]; onDismiss: (id: string) => void }) {
+  return createPortal(
+    <div className="toast-stack" aria-live="polite">
+      {items.map((item) => <div key={item.id} className={`toast ${item.type}`} role="status"><i>{item.type === "success" ? "✓" : item.type === "error" ? "!" : "i"}</i><span>{item.message}</span><button onClick={() => onDismiss(item.id)} aria-label="关闭提示">×</button></div>)}
+    </div>,
+    document.body,
+  );
+}
+
+function TaskContextMenu({ task, projects, x, y, onPatch, onDelete, onAI, onToast, onClose }: {
+  task: Task;
+  projects: Project[];
+  x: number;
+  y: number;
+  onPatch: (patch: Partial<Task>) => void;
+  onDelete: () => void;
+  onAI: () => void;
+  onToast: (message: string) => void;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [projectsOpen, setProjectsOpen] = useState(false);
+  const run = (patch: Partial<Task>, message: string) => { onPatch(patch); onToast(message); onClose(); };
+  useEffect(() => {
+    const dismiss = (event: MouseEvent) => { if (!ref.current?.contains(event.target as Node)) onClose(); };
+    const key = (event: KeyboardEvent) => event.key === "Escape" && onClose();
+    window.addEventListener("pointerdown", dismiss);
+    window.addEventListener("keydown", key);
+    return () => { window.removeEventListener("pointerdown", dismiss); window.removeEventListener("keydown", key); };
+  }, [onClose]);
+  const left = Math.max(12, Math.min(x, window.innerWidth - 316));
+  const top = Math.max(12, Math.min(y, window.innerHeight - 590));
+  return createPortal(
+    <div ref={ref} className="task-context-menu" style={{ left, top }} role="menu" aria-label={`${task.title} 的快捷操作`}>
+      <header><strong>{task.title}</strong><span>快捷操作</span></header>
+      <button role="menuitem" onClick={() => run({ startDate:today(), dueDate:today(), status:"next" }, "已添加到今天")}><i>☀</i><span>添加到“今天”</span></button>
+      <button role="menuitem" onClick={() => run({ important:!task.important }, task.important ? "已取消重要标记" : "已标记为重要")}><i>☆</i><span>{task.important ? "取消重要标记" : "标记为重要"}</span></button>
+      <button role="menuitem" onClick={() => run({ status:task.status === "done" ? "next" : "done" }, task.status === "done" ? "任务已恢复" : "任务已完成")}><i>✓</i><span>{task.status === "done" ? "标记为未完成" : "标记为已完成"}</span></button>
+      <div className="context-separator" />
+      <button role="menuitem" onClick={() => run({ dueDate:today() }, "截止日期已设为今天")}><i>□</i><span>今天到期</span></button>
+      <button role="menuitem" onClick={() => run({ dueDate:addDays(today(), 1) }, "截止日期已设为明天")}><i>□</i><span>明天到期</span></button>
+      {(task.dueDate || task.startDate) && <button role="menuitem" onClick={() => run({ startDate:undefined, dueDate:undefined }, "已清除任务日期")}><i>×</i><span>清除日期</span></button>}
+      <div className="context-separator" />
+      <button role="menuitem" onClick={() => run({ status:"next" }, "已移到下一步")}><i>→</i><span>移到下一步</span></button>
+      <button role="menuitem" onClick={() => run({ status:"waiting" }, "已移到等待中")}><i>◌</i><span>移到等待中</span></button>
+      <button role="menuitem" className={projectsOpen ? "expanded" : ""} onClick={() => setProjectsOpen(!projectsOpen)}><i>▦</i><span>移动到项目</span><b>{projectsOpen ? "⌃" : "⌄"}</b></button>
+      {projectsOpen && <div className="context-projects"><button onClick={() => run({ projectId:undefined }, "已移出项目")}>— 无项目</button>{projects.map((project) => <button key={project.id} onClick={() => run({ projectId:project.id }, `已移动到“${project.name}”`)}><i style={{ background:project.color }} />{project.name}</button>)}</div>}
+      <button role="menuitem" onClick={() => { onAI(); onClose(); }}><i>✦</i><span>用 AI 拆分任务</span></button>
+      <div className="context-separator" />
+      <button role="menuitem" className="danger" onClick={() => { onDelete(); onClose(); }}><i>♲</i><span>删除任务</span><kbd>Delete</kbd></button>
+    </div>,
+    document.body,
   );
 }
 
@@ -1257,6 +1359,7 @@ function SettingsDrawer({
   onClose,
   onSignOut,
   initialTab,
+  onConfirm,
 }: {
   token: string;
   email: string;
@@ -1267,6 +1370,7 @@ function SettingsDrawer({
   onClose: () => void;
   onSignOut: () => void;
   initialTab?: SettingsTab;
+  onConfirm: (options: { title: string; description: string; confirmLabel: string; danger?: boolean }) => Promise<boolean>;
 }) {
   const [tab, setTab] = useState<SettingsTab>(initialTab || "general");
   const [mail, setMail] = useState({ provider:"smtp" as "smtp"|"resend", host:"", port:587, username:"", secret:"", mailFrom:"", secure:false, apiBaseUrl:"https://api.resend.com", hasSecret:false });
@@ -1396,8 +1500,9 @@ function SettingsDrawer({
   };
 
   const deleteAIConfig = async () => {
-    if (!token || !confirm("删除已保存的 AI 配置？删除后需重新填写密钥。"))
-      return;
+    if (!token) return;
+    const approved = await onConfirm({ title:"删除 AI 配置？", description:"已保存的模型地址与加密密钥将被永久删除，之后需要重新填写。", confirmLabel:"删除配置", danger:true });
+    if (!approved) return;
     setAiState("saving");
     try {
       const response = await fetch("/api/ai/config", {
@@ -1639,7 +1744,19 @@ export function GTDApp() {
   const [navOpen, setNavOpen] = useState(false);
   const [sync, setSync] = useState<"saved" | "saving" | "error">("saved");
   const [subtaskTitle, setSubtaskTitle] = useState("");
+  const [contextMenu, setContextMenu] = useState<{ taskId:string; x:number; y:number }>();
+  const [dialog, setDialog] = useState<DialogRequest>();
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
   const loaded = useRef(false);
+  const pushToast = useCallback((message: string, type: ToastItem["type"] = "success") => {
+    const id = uid();
+    setToasts((current) => [...current, { id, message, type }].slice(-4));
+    window.setTimeout(() => setToasts((current) => current.filter((item) => item.id !== id)), 3600);
+  }, []);
+  const requestConfirm = useCallback((options: { title:string; description:string; confirmLabel:string; danger?:boolean }) =>
+    new Promise<boolean>((resolve) => setDialog({ id:uid(), kind:"confirm", ...options, resolve:(value) => resolve(value === true) })), []);
+  const requestPrompt = useCallback((options: { title:string; description:string; confirmLabel:string; placeholder?:string }) =>
+    new Promise<string | null>((resolve) => setDialog({ id:uid(), kind:"prompt", ...options, resolve:(value) => resolve(typeof value === "string" ? value : null) })), []);
   useEffect(() => {
     fetch("/api/auth/config")
       .then(async (response) => (await response.json()) as AuthConfig | null)
@@ -1761,6 +1878,26 @@ export function GTDApp() {
           })),
       };
     });
+  };
+  const deleteTaskWithConfirmation = async (task: Task) => {
+    const descendants = state.tasks.filter((item) => {
+      let parentId = item.parentTaskId;
+      while (parentId) {
+        if (parentId === task.id) return true;
+        parentId = state.tasks.find((candidate) => candidate.id === parentId)?.parentTaskId;
+      }
+      return false;
+    }).length;
+    const approved = await requestConfirm({
+      title:`删除“${task.title}”？`,
+      description:descendants ? `此操作会同时删除 ${descendants} 个子任务，并移除其他任务中相关的依赖关系。删除后无法撤销。` : "任务及其依赖关系将被永久删除，此操作无法撤销。",
+      confirmLabel:"删除任务",
+      danger:true,
+    });
+    if (!approved) return;
+    removeTaskTree(task.id);
+    if (selectedId === task.id) setSelectedId(undefined);
+    pushToast(descendants ? `任务及 ${descendants} 个子任务已删除` : "任务已删除");
   };
   const projectOptions: SelectOption[] = [
     { value: "", label: "无项目", icon: "—" },
@@ -2033,22 +2170,14 @@ export function GTDApp() {
           <div>
             <span>我的项目</span>
             <button
-              onClick={() => {
-                const name = prompt("项目名称");
-                if (name)
-                  setState({
-                    ...state,
-                    projects: [
-                      ...state.projects,
-                      {
-                        id: uid(),
-                        name,
-                        color: ["#69d2c8", "#a78bfa", "#f6b85a"][
-                          state.projects.length % 3
-                        ],
-                      },
-                    ],
-                  });
+              onClick={async () => {
+                const name = await requestPrompt({ title:"新建项目", description:"为一组相关行动创建清晰的结果容器。", confirmLabel:"创建项目", placeholder:"例如：新版产品发布" });
+                if (!name) return;
+                setState((current) => ({
+                  ...current,
+                  projects: [...current.projects, { id:uid(), name, color:["#69d2c8", "#a78bfa", "#f6b85a"][current.projects.length % 3] }],
+                }));
+                pushToast(`项目“${name}”已创建`);
               }}
             >
               ＋
@@ -2128,7 +2257,7 @@ export function GTDApp() {
             <button
               onClick={() => {
                 setView("inbox");
-                alert("从清空收集箱开始。完成后依次检查项目与等待事项。");
+                pushToast("回顾已开始：先清空收集箱，再检查项目与等待事项", "info");
               }}
             >
               开始回顾 →
@@ -2170,6 +2299,11 @@ export function GTDApp() {
                     onImportant={() =>
                       setTask(task.id, { important: !task.important })
                     }
+                    onOpenMenu={(event) => {
+                      event.preventDefault();
+                      setSelectedId(task.id);
+                      setContextMenu({ taskId:task.id, x:event.clientX, y:event.clientY });
+                    }}
                   />
                 ))
               ) : (
@@ -2290,7 +2424,7 @@ export function GTDApp() {
                       type="button"
                       className="step-delete"
                       aria-label="删除步骤"
-                      onClick={() => removeTaskTree(step.id)}
+                      onClick={() => void deleteTaskWithConfirmation(step)}
                     >
                       ×
                     </button>
@@ -2468,16 +2602,17 @@ export function GTDApp() {
           <footer>
             <span>创建于今天</span>
             <button
-              onClick={() => {
-                removeTaskTree(selected.id);
-                setSelectedId(undefined);
-              }}
+              onClick={() => void deleteTaskWithConfirmation(selected)}
             >
               删除任务
             </button>
           </footer>
         </aside>
       )}
+      {contextMenu && (() => {
+        const menuTask = state.tasks.find((task) => task.id === contextMenu.taskId);
+        return menuTask ? <TaskContextMenu task={menuTask} projects={state.projects} x={contextMenu.x} y={contextMenu.y} onPatch={(patch) => setTask(menuTask.id, patch)} onDelete={() => void deleteTaskWithConfirmation(menuTask)} onAI={() => setAiTask(menuTask)} onToast={(message) => pushToast(message)} onClose={() => setContextMenu(undefined)} /> : null;
+      })()}
       {aiTask && (
         <AIModal
           task={aiTask}
@@ -2502,6 +2637,7 @@ export function GTDApp() {
             setState(nextState);
             setAiTask(undefined);
             setMode("gantt");
+            pushToast(`${items.length} 个子任务已创建`);
           }}
         />
       )}
@@ -2516,8 +2652,11 @@ export function GTDApp() {
           onClose={() => setSettingsOpen(false)}
           onSignOut={signOut}
           initialTab={settingsInitialTab}
+          onConfirm={requestConfirm}
         />
       )}
+      {dialog && <FriendlyDialog key={dialog.id} request={dialog} onClose={() => setDialog(undefined)} />}
+      {toasts.length > 0 && <ToastStack items={toasts} onDismiss={(id) => setToasts((current) => current.filter((item) => item.id !== id))} />}
     </main>
   );
 }
