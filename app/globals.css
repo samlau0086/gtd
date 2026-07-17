@@ -175,90 +175,6 @@ select:focus-visible {
   border-radius: 9px !important;
   font-weight: 800 !important;
 }
-.install-app-wrap {
-  position: fixed;
-  z-index: 70;
-  top: 20px;
-  right: 22px;
-}
-.install-app {
-  min-height: 34px;
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  padding: 7px 12px;
-  border: 1px solid #3d4a49;
-  border-radius: 8px;
-  background: #202728;
-  color: #b8c4c3;
-  font-size: 10px;
-  font-weight: 700;
-  white-space: nowrap;
-}
-.install-app:hover {
-  border-color: #69d2c877;
-  background: #253130;
-  color: #e8f5f3;
-}
-.install-app span {
-  color: var(--accent);
-  font-size: 15px;
-  line-height: 1;
-}
-.install-help {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  width: 280px;
-  padding: 13px 38px 13px 14px;
-  border: 1px solid #3d4a49;
-  border-radius: 10px;
-  background: #1a2021;
-  box-shadow: 0 18px 50px #0009;
-  color: #dce5e4;
-}
-.install-help strong,
-.install-help span {
-  display: block;
-}
-.install-help strong {
-  font-size: 11px;
-}
-.install-help span {
-  margin-top: 6px;
-  color: #8f9b9a;
-  font-size: 10px;
-  line-height: 1.6;
-}
-.install-help > button {
-  position: absolute;
-  top: 7px;
-  right: 8px;
-  width: 24px;
-  height: 24px;
-  border-radius: 6px;
-  background: transparent;
-  color: #879392;
-  font-size: 17px;
-}
-.install-help > button:hover {
-  background: #2a3233;
-  color: white;
-}
-@media (display-mode: standalone) {
-  .install-app-wrap { display: none; }
-}
-@media (max-width: 720px) {
-  .install-app-wrap {
-    top: auto;
-    right: 16px;
-    bottom: 76px;
-  }
-  .install-help {
-    top: auto;
-    bottom: calc(100% + 8px);
-  }
-}
 .auth-visual {
   position: relative;
   overflow: hidden;
@@ -2556,7 +2472,6 @@ select:focus-visible {
 .theme-toggle span { font-size: 18px; line-height: 1; }
 :root[data-theme="dark"] .theme-icon-dark,
 :root[data-theme="light"] .theme-icon-light { display: none; }
-.install-app-wrap { right: 70px; }
 
 /* Light palette overrides for legacy component colors. */
 :root[data-theme="light"] .auth-page {
@@ -2614,7 +2529,7 @@ select:focus-visible {
   border-color: var(--line);
 }
 :root[data-theme="light"] :is(.modal-backdrop, .settings-backdrop, .dialog-backdrop) { background: #27353266; }
-:root[data-theme="light"] :is(.toast, .install-app, .install-help) {
+:root[data-theme="light"] .toast {
   background: #fff;
   border-color: var(--line);
   color: var(--text);
@@ -2632,5 +2547,4 @@ select:focus-visible {
 
 @media (max-width: 720px) {
   .theme-toggle { top: auto; right: 16px; bottom: 20px; }
-  .install-app-wrap { right: 16px; }
 }

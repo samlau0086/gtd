@@ -55,7 +55,8 @@ test("ships an installable Chrome app experience", async () => {
   assert.match(manifest, /icon-192\.png/);
   assert.match(manifest, /icon-maskable-512\.png/);
   assert.match(manifest, /shortcuts/);
-  assert.match(installer, /beforeinstallprompt/);
+  assert.doesNotMatch(installer, /beforeinstallprompt/);
+  assert.match(installer, /return null/);
   assert.match(installer, /serviceWorker\.register/);
   assert.match(worker, /event\.request\.mode !== "navigate"/);
   assert.match(worker, /offline\.html/);
