@@ -27,6 +27,10 @@ test("ships the GTD Flow product shell", async () => {
   assert.match(app, /function TaskContextMenu/);
   assert.match(app, /deleteTaskWithConfirmation/);
   assert.match(app, /onContextMenu/);
+  assert.match(app, /beginCreateRange/);
+  assert.match(app, /onDoubleClick/);
+  assert.match(app, /gantt-date-tooltip/);
+  assert.match(app, /createGanttTask/);
   assert.doesNotMatch(app, /\b(?:alert|confirm|prompt)\s*\(/);
   assert.doesNotMatch(app, /<select/);
   assert.doesNotMatch(

@@ -912,6 +912,7 @@ function Gantt({
   selectedId,
   onChange,
   onSelect,
+  onCreateRange,
 }: {
   tasks: Task[];
   projects: Project[];
@@ -919,9 +920,12 @@ function Gantt({
   selectedId?: string;
   onChange: (id: string, patch: Partial<Task>) => void;
   onSelect: (id: string) => void;
+  onCreateRange: (startDate: string, dueDate: string) => void;
 }) {
   const [zoom, setZoom] = useState<"day" | "week" | "month">("week");
   const [viewportWidth, setViewportWidth] = useState(0);
+  const [hoverCell, setHoverCell] = useState<{ column: number; row: number }>();
+  const [draftRange, setDraftRange] = useState<{ start: number; end: number; row: number }>();
   const scrollRef = useRef<HTMLDivElement>(null);
   const scheduled = tasks.filter(
     (task) => task.startDate && task.dueDate && task.status !== "done",
@@ -946,6 +950,34 @@ function Gantt({
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
+  const canvasCell = (event: { clientX: number; clientY: number; currentTarget: EventTarget & HTMLDivElement }) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    return {
+      column: Math.max(0, Math.min(days - 1, Math.floor((event.clientX - rect.left) / cell))),
+      row: Math.max(0, Math.floor((event.clientY - rect.top) / 50)),
+    };
+  };
+  const beginCreateRange = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if ((event.target as HTMLElement).closest(".gantt-bar")) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const origin = canvasCell(event);
+    const startX = event.clientX;
+    let end = origin.column;
+    let moved = false;
+    const move = (nextEvent: PointerEvent) => {
+      end = Math.max(0, Math.min(days - 1, Math.floor((nextEvent.clientX - rect.left) / cell)));
+      if (Math.abs(nextEvent.clientX - startX) >= 5 || end !== origin.column) moved = true;
+      if (moved) setDraftRange({ start: origin.column, end, row: origin.row });
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      setDraftRange(undefined);
+      if (moved && end !== origin.column) onCreateRange(columns[Math.min(origin.column, end)], columns[Math.max(origin.column, end)]);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
   const beginDrag = (
     event: ReactPointerEvent,
     task: Task,
@@ -992,7 +1024,7 @@ function Gantt({
         <div>
           <strong>项目时间轴</strong>
           <span>
-            {scheduled.length} 项已排期 · {unscheduled.length} 项待排期
+            {scheduled.length} 项已排期 · {unscheduled.length} 项待排期 · 双击或拖拽空白网格新建
           </span>
         </div>
         <div className="zoom">
@@ -1043,12 +1075,26 @@ function Gantt({
           </div>
           <div
             className="gantt-canvas"
+            aria-label="甘特时间轴，双击单日或拖拽日期范围新建任务"
+            onPointerDown={beginCreateRange}
+            onPointerMove={(event) => {
+              if (!draftRange && !(event.target as HTMLElement).closest(".gantt-bar")) setHoverCell(canvasCell(event));
+              else if ((event.target as HTMLElement).closest(".gantt-bar")) setHoverCell(undefined);
+            }}
+            onPointerLeave={() => !draftRange && setHoverCell(undefined)}
+            onDoubleClick={(event) => {
+              if ((event.target as HTMLElement).closest(".gantt-bar")) return;
+              const { column } = canvasCell(event);
+              onCreateRange(columns[column], columns[column]);
+            }}
             style={{
               left: 260,
               width: days * cell,
               backgroundSize: `${cell}px 50px`,
             }}
           >
+            {hoverCell && !draftRange && <><div className="gantt-hover-cell" style={{ left: hoverCell.column * cell, top: hoverCell.row * 50, width: cell }} /><div className="gantt-date-tooltip" style={{ left: hoverCell.column * cell + cell / 2, top: hoverCell.row * 50 + 5 }}>{new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "long", day: "numeric", weekday: "short" }).format(new Date(`${columns[hoverCell.column]}T12:00:00`))}</div></>}
+            {draftRange && <div className="gantt-range-selection" style={{ left: Math.min(draftRange.start, draftRange.end) * cell, top: draftRange.row * 50, width: (Math.abs(draftRange.end - draftRange.start) + 1) * cell }}><span>{formatDate(columns[Math.min(draftRange.start, draftRange.end)])} — {formatDate(columns[Math.max(draftRange.start, draftRange.end)])}</span></div>}
             {selectedId && scheduled.some((task) => task.id === selectedId) && <div className="gantt-selected-row" style={{ top: scheduled.findIndex((task) => task.id === selectedId) * 50 }} />}
             <DependencyLines tasks={scheduled} start={start} cell={cell} />
             {scheduled.map((task, row) => {
@@ -2253,6 +2299,17 @@ export function GTDApp() {
     setQuick("");
     setSelectedId(task.id);
   };
+  const createGanttTask = async (startDate: string, dueDate: string) => {
+    const rangeLabel = startDate === dueDate ? formatDate(startDate) : `${formatDate(startDate)} 至 ${formatDate(dueDate)}`;
+    const title = await requestPrompt({ title: "新建排期任务", description: `任务将安排在 ${rangeLabel}。`, confirmLabel: "创建任务", placeholder: "输入任务名称" });
+    if (!title?.trim()) return;
+    const estimate = Math.max(1, Math.round((new Date(`${dueDate}T12:00:00`).getTime() - new Date(`${startDate}T12:00:00`).getTime()) / DAY) + 1);
+    const status: Status = view === "inbox" || view === "next" || view === "waiting" || view === "scheduled" || view === "someday" ? view : "next";
+    const task: Task = { id: uid(), title: title.trim(), notes: "", status, context: "", important: false, startDate, dueDate, estimate, sortOrder: stateRef.current.tasks.length, tagIds: [], dependencyIds: [], projectId: projectFilter };
+    setState((current) => ({ ...current, tasks: [...current.tasks, task] }));
+    setSelectedId(task.id);
+    pushToast(`任务已安排在 ${rangeLabel}`);
+  };
   const addSubtask = (event: FormEvent) => {
     event.preventDefault();
     if (!selected || !subtaskTitle.trim()) return;
@@ -2536,8 +2593,9 @@ export function GTDApp() {
                 weekStartsOn={preferences.weekStartsOn}
                 selectedId={selectedId}
                 onChange={setTask}
-            onSelect={setSelectedId}
-          />
+                onSelect={setSelectedId}
+                onCreateRange={(startDate, dueDate) => void createGanttTask(startDate, dueDate)}
+              />
         )}
       </section>
       {selected && (

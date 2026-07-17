@@ -1636,6 +1636,8 @@ select:focus-visible {
   background-image:
     linear-gradient(to right, #252c2d 1px, transparent 1px),
     linear-gradient(to bottom, #252c2d 1px, transparent 1px);
+  user-select: none;
+  touch-action: none;
 }
 .gantt-selected-row {
   position: absolute;
@@ -1647,6 +1649,48 @@ select:focus-visible {
   background: #69d2c80b;
   pointer-events: none;
   z-index: 1;
+}
+.gantt-hover-cell {
+  position: absolute;
+  height: 50px;
+  border: 1px solid #69d2c84a;
+  background: #69d2c80d;
+  pointer-events: none;
+  z-index: 1;
+}
+.gantt-date-tooltip {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  padding: 5px 8px;
+  border: 1px solid #42504f;
+  border-radius: 6px;
+  background: #0f1415;
+  box-shadow: 0 7px 18px #0008;
+  color: #d9e4e3;
+  font-size: 8px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 7;
+}
+.gantt-range-selection {
+  position: absolute;
+  height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #7de1d6;
+  background: #69d2c82b;
+  box-shadow: inset 0 0 0 1px #d8fffb20;
+  color: #c9f5f0;
+  pointer-events: none;
+  z-index: 6;
+}
+.gantt-range-selection span {
+  padding: 4px 7px;
+  border-radius: 5px;
+  background: #152422e8;
+  font-size: 8px;
+  white-space: nowrap;
 }
 .gantt-bar {
   position: absolute;
