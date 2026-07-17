@@ -12,7 +12,6 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import { PWAInstall } from "./PWAInstall";
 
 type Status = "inbox" | "next" | "waiting" | "scheduled" | "someday" | "done";
 type Project = { id: string; name: string; color: string; revision?: number; updatedAt?: string };
@@ -2628,7 +2627,6 @@ export function GTDApp() {
               <Icon name="gantt" size={14} />甘特
             </button>
           </div>
-          <PWAInstall />
         </header>
         {view === "review" && (
           <div className="review-banner">

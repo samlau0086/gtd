@@ -14,6 +14,20 @@
   color-scheme: dark;
 }
 
+:root[data-theme="light"] {
+  --bg: #f4f7f6;
+  --panel: #ffffff;
+  --panel-2: #f0f4f3;
+  --panel-3: #e5ecea;
+  --line: #d9e2e0;
+  --muted: #687775;
+  --text: #17201f;
+  --accent: #168b82;
+  --accent-soft: #d9f0ed;
+  --danger: #c74646;
+  color-scheme: light;
+}
+
 /* Task reminders */
 .reminder-field{position:relative;margin:12px 16px 0}.reminder-trigger{width:100%;min-height:58px;display:flex;align-items:center;gap:12px;padding:10px 14px;border:1px solid #2f3738;border-radius:10px;background:#202627;color:#dce5e4;text-align:left}.reminder-trigger>span{color:var(--accent);font-size:20px}.reminder-trigger>div{flex:1;min-width:0}.reminder-trigger strong,.reminder-trigger small{display:block}.reminder-trigger strong{font-size:11px}.reminder-trigger small{margin-top:4px;color:#7f8b8a;font-size:9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.reminder-trigger>b{color:#71807e;font-size:18px}.reminder-popover{position:absolute;z-index:55;left:0;right:0;top:calc(100% + 6px);padding:8px;border:1px solid #3b4646;border-radius:12px;background:#191e1f;box-shadow:0 18px 45px #000a}.reminder-popover header{height:38px;display:flex;align-items:center;justify-content:space-between;padding:0 8px}.reminder-popover header button{background:transparent;color:#9aa6a5;font-size:18px}.reminder-popover>button:not(.configure-link){width:100%;height:42px;display:flex;align-items:center;justify-content:space-between;padding:0 10px;border-radius:8px;background:transparent;color:#cbd5d4}.reminder-popover>button:hover,.reminder-popover>button.selected{background:#24302f;color:var(--accent)}.reminder-popover em{color:#788584;font-size:10px;font-style:normal}.custom-reminder{display:block;margin:6px 0;padding:9px 10px;border-top:1px solid #303839;border-bottom:1px solid #303839;color:#879392;font-size:9px}.custom-reminder input{width:100%;height:36px;margin-top:7px;padding:0 8px;border:1px solid #36403f;border-radius:7px;background:#141919;color:#dce5e4;color-scheme:dark}.reminder-channels{padding:8px 10px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}.reminder-channels>span{width:100%;color:#7f8b8a;font-size:9px}.reminder-channels button{height:27px;padding:0 9px;border-radius:14px;background:#293130;color:#899493;font-size:9px}.reminder-channels button.active{background:#24413e;color:var(--accent)}.reminder-channels button:disabled{opacity:.35}.reminder-popover footer{display:flex;justify-content:space-between;padding:9px 8px 3px}.remove-reminder{background:transparent;color:#d47c77}.save-reminder{min-height:34px;padding:0 14px;border-radius:8px;background:var(--accent);color:#102322;font-weight:800}.save-reminder:disabled{opacity:.45}.configure-link{margin:4px 10px;background:transparent;color:var(--accent);font-size:10px}
 .ai-settings-card select{width:100%;height:43px;margin-top:7px;padding:0 12px;border:1px solid #35403f;border-radius:8px;background:#181d1e;color:#e6eceb}.notification-settings-card{display:grid;gap:12px}.notification-channel-form{padding:12px;border:1px solid #303a39;border-radius:10px;background:#1b2121}.notification-channel-card{min-height:58px;display:flex;align-items:center;gap:7px}.notification-channel-card>div{flex:1;min-width:0}.notification-channel-card strong,.notification-channel-card span{display:block}.notification-channel-card strong{font-size:11px}.notification-channel-card span{margin-top:4px;color:#788584;font-size:9px}.notification-channel-card>button{min-width:52px;height:29px;padding:0 8px;border-radius:7px;background:#293232;color:#9eaaa9;font-size:9px}.notification-channel-card>button.channel-on{background:#24413e;color:var(--accent)}.notification-channel-card>button:disabled{opacity:.4}
@@ -161,6 +175,12 @@ select:focus-visible {
   border-radius: 9px !important;
   font-weight: 800 !important;
 }
+.install-app-wrap {
+  position: fixed;
+  z-index: 70;
+  top: 20px;
+  right: 22px;
+}
 .install-app {
   min-height: 34px;
   display: inline-flex;
@@ -185,8 +205,59 @@ select:focus-visible {
   font-size: 15px;
   line-height: 1;
 }
+.install-help {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 280px;
+  padding: 13px 38px 13px 14px;
+  border: 1px solid #3d4a49;
+  border-radius: 10px;
+  background: #1a2021;
+  box-shadow: 0 18px 50px #0009;
+  color: #dce5e4;
+}
+.install-help strong,
+.install-help span {
+  display: block;
+}
+.install-help strong {
+  font-size: 11px;
+}
+.install-help span {
+  margin-top: 6px;
+  color: #8f9b9a;
+  font-size: 10px;
+  line-height: 1.6;
+}
+.install-help > button {
+  position: absolute;
+  top: 7px;
+  right: 8px;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: transparent;
+  color: #879392;
+  font-size: 17px;
+}
+.install-help > button:hover {
+  background: #2a3233;
+  color: white;
+}
 @media (display-mode: standalone) {
-  .install-app { display: none; }
+  .install-app-wrap { display: none; }
+}
+@media (max-width: 720px) {
+  .install-app-wrap {
+    top: auto;
+    right: 16px;
+    bottom: 76px;
+  }
+  .install-help {
+    top: auto;
+    bottom: calc(100% + 8px);
+  }
 }
 .auth-visual {
   position: relative;
@@ -984,7 +1055,7 @@ select:focus-visible {
     radial-gradient(circle at 80% 0, #1a2726 0, transparent 28%), #121617;
 }
 .topbar {
-  padding: 34px 40px 22px;
+  padding: 34px 150px 22px 40px;
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
@@ -2253,6 +2324,11 @@ select:focus-visible {
     margin-right: 28px;
   }
 }
+@media (min-width: 721px) and (max-width: 1180px) {
+  .topbar {
+    padding-right: 150px;
+  }
+}
 @media (max-width: 900px) {
   body {
     overflow: auto;
@@ -2453,4 +2529,108 @@ select:focus-visible {
   .gantt-toolbar {
     padding: 0 10px;
   }
+}
+
+/* Theme control */
+.theme-toggle {
+  position: fixed;
+  z-index: 76;
+  top: 20px;
+  right: 22px;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-2);
+  color: var(--text);
+  box-shadow: 0 8px 28px #0002;
+  transition: background .16s ease, border-color .16s ease, color .16s ease, transform .16s ease;
+}
+.theme-toggle:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  transform: translateY(-1px);
+}
+.theme-toggle span { font-size: 18px; line-height: 1; }
+:root[data-theme="dark"] .theme-icon-dark,
+:root[data-theme="light"] .theme-icon-light { display: none; }
+.install-app-wrap { right: 70px; }
+
+/* Light palette overrides for legacy component colors. */
+:root[data-theme="light"] .auth-page {
+  background: radial-gradient(circle at 75% 18%, #dff3f0 0, transparent 32%), var(--bg);
+}
+:root[data-theme="light"] :is(.sidebar, .settings-nav, .modal-side, .gantt-projects) {
+  background: #f7faf9;
+  border-color: var(--line);
+}
+:root[data-theme="light"] :is(.workspace, .settings-drawer, .detail, .modal, .friendly-dialog, .task-context-menu, .select-popover, .reminder-popover) {
+  background: var(--panel);
+  border-color: var(--line);
+  box-shadow: 0 22px 60px #405b5724;
+}
+:root[data-theme="light"] :is(.search, .view-switch, .task-row, .steps-card, .ai-card, .ai-settings-card, .notification-channel-form, .mcp-token-list, .mcp-config-card, .mcp-example, .data-card, .account-card, .reminder-trigger, .detail-field, .gantt-toolbar) {
+  background: var(--panel-2);
+  border-color: var(--line);
+  color: var(--text);
+}
+:root[data-theme="light"] :is(.auth-card input, .modal input, .modal textarea, .ai-settings-card input, .ai-settings-card select, .custom-reminder input, .friendly-dialog input, .detail input, .detail textarea, .detail select) {
+  background: #fff;
+  border-color: #cbd8d5;
+  color: var(--text);
+  color-scheme: light;
+}
+:root[data-theme="light"] :is(.sidebar nav button, .project-link, .task-row, .detail, .modal, .settings-drawer, .friendly-dialog, .task-context-menu) {
+  color: var(--text);
+}
+:root[data-theme="light"] :is(.sidebar nav button:hover, .project-item:hover, .settings-nav button:hover, .select-options > button:hover, .task-context-menu > button:hover, .context-projects button:hover) {
+  background: #eaf0ef;
+  color: var(--text);
+}
+:root[data-theme="light"] :is(.sidebar nav button.active, .project-item.active, .view-switch button.active, .settings-nav button.active, .select-options > button.active) {
+  background: #dce9e7;
+  color: #0f6861;
+  box-shadow: none;
+}
+:root[data-theme="light"] :is(.account button:hover, .settings-header > button:hover, .project-actions button:hover, .friendly-dialog footer button, .task-context-menu > button.expanded) {
+  background: var(--panel-3);
+  color: var(--text);
+}
+:root[data-theme="light"] .project-actions { background: linear-gradient(90deg, transparent, #eaf0ef 12px); }
+:root[data-theme="light"] .project-item.active .project-actions { background: linear-gradient(90deg, transparent, #dce9e7 12px); }
+:root[data-theme="light"] :is(.sidebar nav button b, .project-link b, .notification-channel-card > button, .reminder-channels button) {
+  background: #dfe7e5;
+  color: #566562;
+}
+:root[data-theme="light"] .review-banner {
+  background: linear-gradient(120deg, #d9f0ed, #eef5f3);
+  border-color: #a9d7d2;
+}
+:root[data-theme="light"] :is(.detail > header, .steps-card > header, .list-head, .settings-header, .context-separator, .push-device-list) { border-color: var(--line); }
+:root[data-theme="light"] :is(.steps-card, .gantt-shell, .gantt-grid, .gantt-project-row, .gantt-timeline, .context-projects) {
+  background-color: #f8faf9;
+  border-color: var(--line);
+}
+:root[data-theme="light"] :is(.modal-backdrop, .settings-backdrop, .dialog-backdrop) { background: #27353266; }
+:root[data-theme="light"] :is(.toast, .install-app, .install-help) {
+  background: #fff;
+  border-color: var(--line);
+  color: var(--text);
+  box-shadow: 0 16px 44px #405b5729;
+}
+:root[data-theme="light"] .visual-board {
+  background: #ffffffd9;
+  border-color: #b9d6d1;
+  box-shadow: 0 40px 100px #3e62552e;
+}
+:root[data-theme="light"] .auth-card > p,
+:root[data-theme="light"] .auth-card label,
+:root[data-theme="light"] .modal label,
+:root[data-theme="light"] .review-banner p { color: var(--muted); }
+
+@media (max-width: 720px) {
+  .theme-toggle { top: auto; right: 16px; bottom: 20px; }
+  .install-app-wrap { right: 16px; }
 }

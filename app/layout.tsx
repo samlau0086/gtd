@@ -23,7 +23,10 @@ export async function generateMetadata(): Promise<Metadata> {
     description: "融合 GTD、可视化排期与 AI 任务拆分的个人效率工作台。",
     applicationName: "GTD Flow",
     manifest: "/manifest.webmanifest",
-    themeColor: "#111516",
+    themeColor: [
+      { media: "(prefers-color-scheme: light)", color: "#f4f7f6" },
+      { media: "(prefers-color-scheme: dark)", color: "#111516" },
+    ],
     appleWebApp: {
       capable: true,
       statusBarStyle: "black-translucent",
@@ -47,7 +50,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="zh-CN">
+    <html lang="zh-CN" suppressHydrationWarning>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem("gtdflow-theme");var m=matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";document.documentElement.dataset.theme=t==="light"||t==="dark"?t:m;document.documentElement.dataset.themeSource=t?"manual":"system"}catch(e){}})();`,
+          }}
+        />
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >

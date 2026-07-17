@@ -10,6 +10,7 @@ test("ships the GTD Flow product shell", async () => {
     readFile(new URL("../package.json", import.meta.url), "utf8"),
   ]);
   assert.match(page, /<GTDApp/);
+  assert.match(page, /<PWAInstall/);
   assert.match(layout, /GTD Flow/);
   assert.match(app, /今天/);
   assert.match(app, /甘特/);
