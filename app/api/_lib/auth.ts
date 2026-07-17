@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { query } from "../../../db/binding";
+import { GtdError } from "./gtd";
 
 export type AuthUser = { id: string; email: string };
 
@@ -33,6 +34,7 @@ export async function requireAdmin(request: Request): Promise<AuthUser> {
 
 export function authError(error: unknown) {
   if (error instanceof Response) return error;
+  if (error instanceof GtdError) return Response.json({ error:error.message, details:error.details }, { status:error.status });
   console.error("API request failed", error instanceof Error ? error.message : "unknown");
   return Response.json({ error: "服务器暂时无法处理请求" }, { status: 500 });
 }

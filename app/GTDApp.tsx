@@ -13,8 +13,8 @@ import {
 import { createPortal } from "react-dom";
 
 type Status = "inbox" | "next" | "waiting" | "scheduled" | "someday" | "done";
-type Project = { id: string; name: string; color: string };
-type Tag = { id: string; name: string };
+type Project = { id: string; name: string; color: string; revision?: number; updatedAt?: string };
+type Tag = { id: string; name: string; revision?: number; updatedAt?: string };
 type Task = {
   id: string;
   projectId?: string;
@@ -30,8 +30,10 @@ type Task = {
   sortOrder: number;
   tagIds: string[];
   dependencyIds: string[];
+  revision?: number;
+  updatedAt?: string;
 };
-type AppState = { projects: Project[]; tasks: Task[]; tags: Tag[] };
+type AppState = { projects: Project[]; tasks: Task[]; tags: Tag[]; dataVersion?: number };
 type DraftItem = {
   tempId: string;
   title: string;
@@ -43,6 +45,7 @@ type DraftItem = {
 };
 type AuthConfig = { mode: "self-hosted"; setupRequired?: boolean };
 type ToastItem = { id: string; message: string; type: "success" | "info" | "error" };
+type McpTokenRecord = { id: string; name: string; scope: "read" | "write"; expiresAt: string | null; lastUsedAt: string | null; revokedAt: string | null; createdAt: string };
 type DialogRequest = {
   id: string;
   kind: "confirm" | "prompt";
@@ -53,7 +56,7 @@ type DialogRequest = {
   placeholder?: string;
   resolve: (value: boolean | string | null) => void;
 };
-type SettingsTab = "general" | "smtp" | "ai" | "account" | "data";
+type SettingsTab = "general" | "smtp" | "ai" | "mcp" | "account" | "data";
 type UserPreferences = {
   defaultView: ViewKey;
   weekStartsOn: "monday" | "sunday";
@@ -88,6 +91,12 @@ const formatDate = (value?: string) =>
         day: "numeric",
       }).format(new Date(`${value}T12:00:00`))
     : "未设置";
+
+const projectPayload = ({ id: _id, revision: _revision, updatedAt: _updatedAt, ...project }: Project) => project;
+const tagPayload = ({ id: _id, revision: _revision, updatedAt: _updatedAt, ...tag }: Tag) => tag;
+const taskPayload = ({ id: _id, revision: _revision, updatedAt: _updatedAt, ...task }: Task) => task;
+const taskMutationPayload = (task: Task) => ({ ...taskPayload(task), projectId: task.projectId || null, parentTaskId: task.parentTaskId || null, startDate: task.startDate || null, dueDate: task.dueDate || null });
+const sameEntity = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right);
 
 const seedState = (): AppState => {
   const now = today();
@@ -206,6 +215,7 @@ const seedState = (): AppState => {
         dependencyIds: [],
       },
     ],
+    dataVersion: 0,
   };
 };
 
@@ -225,6 +235,7 @@ const freshSeedState = (): AppState => {
       tagIds: item.tagIds.map((id) => tagIds.get(id)!).filter(Boolean),
       dependencyIds: item.dependencyIds.map((id) => taskIds.get(id)!).filter(Boolean),
     })),
+    dataVersion: 0,
   };
 };
 
@@ -1360,6 +1371,7 @@ function SettingsDrawer({
   onSignOut,
   initialTab,
   onConfirm,
+  onToast,
 }: {
   token: string;
   email: string;
@@ -1371,6 +1383,7 @@ function SettingsDrawer({
   onSignOut: () => void;
   initialTab?: SettingsTab;
   onConfirm: (options: { title: string; description: string; confirmLabel: string; danger?: boolean }) => Promise<boolean>;
+  onToast: (message: string, type?: ToastItem["type"]) => void;
 }) {
   const [tab, setTab] = useState<SettingsTab>(initialTab || "general");
   const [mail, setMail] = useState({ provider:"smtp" as "smtp"|"resend", host:"", port:587, username:"", secret:"", mailFrom:"", secure:false, apiBaseUrl:"https://api.resend.com", hasSecret:false });
@@ -1386,6 +1399,13 @@ function SettingsDrawer({
     "idle" | "loading" | "saving" | "testing" | "saved" | "error"
   >("idle");
   const [aiMessage, setAiMessage] = useState("");
+  const [mcpTokens, setMcpTokens] = useState<McpTokenRecord[]>([]);
+  const [mcpEndpoint, setMcpEndpoint] = useState("");
+  const [mcpName, setMcpName] = useState("我的 MCP 客户端");
+  const [mcpScope, setMcpScope] = useState<"read" | "write">("write");
+  const [mcpExpiry, setMcpExpiry] = useState("90");
+  const [mcpRawToken, setMcpRawToken] = useState("");
+  const [mcpBusy, setMcpBusy] = useState(false);
 
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -1424,6 +1444,45 @@ function SettingsDrawer({
         setAiMessage(error instanceof Error ? error.message : "读取配置失败");
       });
   }, [token]);
+
+  const loadMcpTokens = useCallback(async () => {
+    if (!token) return;
+    const response = await fetch("/api/mcp-tokens", { headers: { Authorization: `Bearer ${token}` } });
+    const data = await response.json() as { tokens?: McpTokenRecord[]; endpoint?: string; error?: string };
+    if (!response.ok) throw new Error(data.error || "读取 MCP Token 失败");
+    setMcpTokens(data.tokens || []);
+    setMcpEndpoint(data.endpoint || `${location.origin}/mcp`);
+  }, [token]);
+
+  useEffect(() => { if (tab === "mcp") void loadMcpTokens().catch((error) => onToast(error instanceof Error ? error.message : "读取 MCP Token 失败", "error")); }, [tab, loadMcpTokens, onToast]);
+
+  const createMcpAccessToken = async () => {
+    setMcpBusy(true);
+    try {
+      const response = await fetch("/api/mcp-tokens", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ name: mcpName, scope: mcpScope, expiresInDays: mcpExpiry === "never" ? null : Number(mcpExpiry) }) });
+      const data = await response.json() as McpTokenRecord & { token?: string; error?: string };
+      if (!response.ok || !data.token) throw new Error(data.error || "创建 MCP Token 失败");
+      setMcpRawToken(data.token);
+      await loadMcpTokens();
+      onToast("MCP Token 已创建，请立即复制保存");
+    } catch (error) { onToast(error instanceof Error ? error.message : "创建 MCP Token 失败", "error"); }
+    finally { setMcpBusy(false); }
+  };
+
+  const revokeMcpAccessToken = async (item: McpTokenRecord) => {
+    const approved = await onConfirm({ title: "撤销 MCP Token？", description: `“${item.name}”撤销后，使用它的客户端会立即失去访问权限。`, confirmLabel: "撤销 Token", danger: true });
+    if (!approved) return;
+    const response = await fetch(`/api/mcp-tokens/${encodeURIComponent(item.id)}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
+    const data = await response.json().catch(() => ({})) as { error?: string };
+    if (!response.ok) return onToast(data.error || "撤销失败", "error");
+    await loadMcpTokens();
+    onToast("MCP Token 已撤销");
+  };
+
+  const copyText = async (value: string, label: string) => {
+    try { await navigator.clipboard.writeText(value); onToast(`${label}已复制`); }
+    catch { onToast("复制失败，请手动选择文本复制", "error"); }
+  };
 
   useEffect(() => {
     if (!token) return;
@@ -1572,6 +1631,7 @@ function SettingsDrawer({
     { key: "general", icon: "◫", label: "通用" },
     { key: "smtp", icon: "@", label: "邮件服务" },
     { key: "ai", icon: "✦", label: "AI 服务" },
+    { key: "mcp", icon: "⌘", label: "MCP 接入" },
     { key: "account", icon: "◎", label: "账号与同步" },
     { key: "data", icon: "⇩", label: "数据" },
   ];
@@ -1690,6 +1750,27 @@ function SettingsDrawer({
                 )}
               </section>
             )}
+            {tab === "mcp" && (
+              <section className="settings-section">
+                <div className="settings-title"><h3>MCP 接入</h3><p>让 Codex、Claude 或 Cursor 安全地读取和操作你的 GTD 数据。系统设置不会通过 MCP 暴露。</p></div>
+                {!token ? <div className="settings-empty"><span>⌘</span><strong>请先登录账号</strong><p>个人访问令牌只能由已登录用户创建。</p></div> : <>
+                  {mcpRawToken && <div className="mcp-secret-card"><div><strong>仅显示这一次</strong><button onClick={() => setMcpRawToken("")} aria-label="关闭">×</button></div><p>请立即复制并保存在客户端或密码管理器中，之后无法再次查看。</p><code>{mcpRawToken}</code><button className="primary" onClick={() => void copyText(mcpRawToken, "Token")}>复制 Token</button></div>}
+                  <div className="ai-settings-card mcp-create-card">
+                    <label>Token 名称<input value={mcpName} maxLength={80} onChange={(event) => setMcpName(event.target.value)} placeholder="例如：工作电脑上的 Codex" /></label>
+                    <div className="mcp-choice"><strong>权限</strong><div className="segmented"><button className={mcpScope === "write" ? "active" : ""} onClick={() => setMcpScope("write")}>读写</button><button className={mcpScope === "read" ? "active" : ""} onClick={() => setMcpScope("read")}>只读</button></div></div>
+                    <div className="mcp-choice"><strong>有效期</strong><div className="segmented"><button className={mcpExpiry === "30" ? "active" : ""} onClick={() => setMcpExpiry("30")}>30 天</button><button className={mcpExpiry === "90" ? "active" : ""} onClick={() => setMcpExpiry("90")}>90 天</button><button className={mcpExpiry === "365" ? "active" : ""} onClick={() => setMcpExpiry("365")}>365 天</button><button className={mcpExpiry === "never" ? "active" : ""} onClick={() => setMcpExpiry("never")}>永不过期</button></div></div>
+                    <div className="settings-actions"><button className="primary" disabled={mcpBusy || !mcpName.trim()} onClick={() => void createMcpAccessToken()}>{mcpBusy ? "创建中…" : "创建 Token"}</button></div>
+                  </div>
+                  <h4 className="mcp-subtitle">已有 Token</h4>
+                  <div className="mcp-token-list">{mcpTokens.length === 0 ? <div className="mcp-list-empty">尚未创建 Token</div> : mcpTokens.map((item) => <div className={`mcp-token-row ${item.revokedAt ? "revoked" : ""}`} key={item.id}><div><strong>{item.name}</strong><span>{item.scope === "write" ? "读写" : "只读"} · {item.revokedAt ? "已撤销" : item.expiresAt ? `${new Date(item.expiresAt).toLocaleDateString("zh-CN")} 到期` : "永不过期"}</span><small>{item.lastUsedAt ? `最后使用：${new Date(item.lastUsedAt).toLocaleString("zh-CN")}` : "尚未使用"}</small></div>{!item.revokedAt && <button className="danger-ghost" onClick={() => void revokeMcpAccessToken(item)}>撤销</button>}</div>)}</div>
+                  <h4 className="mcp-subtitle">客户端配置</h4>
+                  <div className="mcp-config-card"><div><span>Endpoint</span><button onClick={() => void copyText(mcpEndpoint, "Endpoint")}>复制</button></div><code>{mcpEndpoint}</code><p>请求头：<code>Authorization: Bearer &lt;你的 Token&gt;</code></p></div>
+                  <details className="mcp-example"><summary>Codex 配置示例</summary><pre>{`[mcp_servers.gtd_flow]\nurl = "${mcpEndpoint}"\nbearer_token_env_var = "GTD_FLOW_MCP_TOKEN"`}</pre><button onClick={() => void copyText(`[mcp_servers.gtd_flow]\nurl = "${mcpEndpoint}"\nbearer_token_env_var = "GTD_FLOW_MCP_TOKEN"`, "配置")}>复制配置</button></details>
+                  <details className="mcp-example"><summary>Claude / Cursor 配置示例</summary><pre>{JSON.stringify({ mcpServers: { "gtd-flow": { url: mcpEndpoint, headers: { Authorization: "Bearer <你的 Token>" } } } }, null, 2)}</pre></details>
+                  <p className="security-note">服务端只保存 Token 的 HMAC 摘要。Token 可随时撤销，建议按设备分别创建并定期轮换。</p>
+                </>}
+              </section>
+            )}
             {tab === "account" && (
               <section className="settings-section">
                 <div className="settings-title"><h3>账号与同步</h3><p>查看当前账号及云端同步状态。</p></div>
@@ -1725,7 +1806,7 @@ export function GTDApp() {
   const authReady = Boolean(authConfig);
   const [token, setToken] = useState("");
   const [email, setEmail] = useState("账户");
-  const [state, setState] = useState<AppState>(() => ({ projects: [], tasks: [], tags: [] }));
+  const [state, setState] = useState<AppState>(() => ({ projects: [], tasks: [], tags: [], dataVersion: 0 }));
   const [ready, setReady] = useState(false);
   const [view, setView] = useState<ViewKey>("today");
   const [mode, setMode] = useState<"list" | "gantt">("list");
@@ -1748,6 +1829,10 @@ export function GTDApp() {
   const [dialog, setDialog] = useState<DialogRequest>();
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const loaded = useRef(false);
+  const syncing = useRef(false);
+  const stateRef = useRef(state);
+  const serverSnapshot = useRef<AppState>({ projects: [], tasks: [], tags: [], dataVersion: 0 });
+  useEffect(() => { stateRef.current = state; }, [state]);
   const pushToast = useCallback((message: string, type: ToastItem["type"] = "success") => {
     const id = uid();
     setToasts((current) => [...current, { id, message, type }].slice(-4));
@@ -1794,7 +1879,8 @@ export function GTDApp() {
         }
         if (!r.ok) throw new Error();
         const data = (await r.json()) as AppState;
-        if (data.tasks.length || data.projects.length) {
+        serverSnapshot.current = data;
+        if (data.tasks.length || data.projects.length || data.tags.length) {
           setState(data);
         } else {
           loaded.current = true;
@@ -1813,26 +1899,123 @@ export function GTDApp() {
   useEffect(() => {
     if (!ready || !loaded.current) return;
     if (!token) return;
+    const desired = state;
+    const base = serverSnapshot.current;
+    const hasChanges =
+      !sameEntity(desired.projects.map(projectPayload), base.projects.map(projectPayload)) ||
+      !sameEntity(desired.tags.map(tagPayload), base.tags.map(tagPayload)) ||
+      !sameEntity(desired.tasks.map(taskPayload), base.tasks.map(taskPayload));
+    if (!hasChanges || syncing.current) return;
     setSync("saving");
-    const timer = setTimeout(
-      () =>
-        fetch("/api/state", {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify(state),
-        })
-          .then((r) => {
-            if (!r.ok) throw new Error();
-            setSync("saved");
-          })
-          .catch(() => setSync("error")),
-      700,
-    );
+    const timer = setTimeout(async () => {
+      if (syncing.current) return;
+      syncing.current = true;
+      const headers = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
+      const request = async (url: string, init: RequestInit) => {
+        const response = await fetch(url, { ...init, headers });
+        const body = await response.json().catch(() => ({})) as { error?: string };
+        if (!response.ok) {
+          const error = new Error(body.error || "同步失败") as Error & { status?: number };
+          error.status = response.status;
+          throw error;
+        }
+        return body;
+      };
+      try {
+        const oldProjects = new Map(base.projects.map((item) => [item.id, item]));
+        const oldTags = new Map(base.tags.map((item) => [item.id, item]));
+        const oldTasks = new Map(base.tasks.map((item) => [item.id, item]));
+
+        for (const project of desired.projects) {
+          const old = oldProjects.get(project.id);
+          if (!old) await request("/api/projects", { method: "POST", body: JSON.stringify({ id: project.id, ...projectPayload(project) }) });
+          else if (!sameEntity(projectPayload(project), projectPayload(old))) await request(`/api/projects/${encodeURIComponent(project.id)}`, { method: "PATCH", body: JSON.stringify({ expectedRevision: old.revision || 1, patch: projectPayload(project) }) });
+        }
+        for (const tag of desired.tags) {
+          const old = oldTags.get(tag.id);
+          if (!old) await request("/api/tags", { method: "POST", body: JSON.stringify({ id: tag.id, ...tagPayload(tag) }) });
+          else if (!sameEntity(tagPayload(tag), tagPayload(old))) await request(`/api/tags/${encodeURIComponent(tag.id)}`, { method: "PATCH", body: JSON.stringify({ expectedRevision: old.revision || 1, patch: tagPayload(tag) }) });
+        }
+
+        const newTasks = desired.tasks.filter((item) => !oldTasks.has(item.id));
+        const pending = [...newTasks];
+        const available = new Set(base.tasks.map((item) => item.id));
+        while (pending.length) {
+          const index = pending.findIndex((item) => !item.parentTaskId || available.has(item.parentTaskId));
+          const task = pending.splice(index < 0 ? 0 : index, 1)[0];
+          await request("/api/tasks", { method: "POST", body: JSON.stringify({ id: task.id, ...taskMutationPayload(task), dependencyIds: [] }) });
+          available.add(task.id);
+        }
+        for (const task of newTasks) {
+          if (task.dependencyIds.length) await request(`/api/tasks/${encodeURIComponent(task.id)}`, { method: "PATCH", body: JSON.stringify({ expectedRevision: 1, patch: taskMutationPayload(task) }) });
+        }
+        for (const task of desired.tasks) {
+          const old = oldTasks.get(task.id);
+          if (old && !sameEntity(taskPayload(task), taskPayload(old))) await request(`/api/tasks/${encodeURIComponent(task.id)}`, { method: "PATCH", body: JSON.stringify({ expectedRevision: old.revision || 1, patch: taskMutationPayload(task) }) });
+        }
+        for (const old of base.tasks) {
+          const removed = !desired.tasks.some((item) => item.id === old.id);
+          const parentStillExists = Boolean(old.parentTaskId && desired.tasks.some((item) => item.id === old.parentTaskId));
+          if (removed && (!old.parentTaskId || parentStillExists)) await request(`/api/tasks/${encodeURIComponent(old.id)}`, { method: "DELETE", body: JSON.stringify({ expectedRevision: old.revision || 1 }) });
+        }
+        for (const old of base.projects) {
+          if (!desired.projects.some((item) => item.id === old.id)) await request(`/api/projects/${encodeURIComponent(old.id)}`, { method: "DELETE", body: JSON.stringify({ expectedRevision: old.revision || 1 }) });
+        }
+        for (const old of base.tags) {
+          if (!desired.tags.some((item) => item.id === old.id)) await request(`/api/tags/${encodeURIComponent(old.id)}`, { method: "DELETE", body: JSON.stringify({ expectedRevision: old.revision || 1 }) });
+        }
+
+        const refreshed = await fetch("/api/state", { headers: { Authorization: `Bearer ${token}` } });
+        if (!refreshed.ok) throw new Error("同步后刷新失败");
+        const remote = await refreshed.json() as AppState;
+        serverSnapshot.current = remote;
+        if (sameEntity(stateRef.current.projects.map(projectPayload), desired.projects.map(projectPayload)) &&
+            sameEntity(stateRef.current.tags.map(tagPayload), desired.tags.map(tagPayload)) &&
+            sameEntity(stateRef.current.tasks.map(taskPayload), desired.tasks.map(taskPayload))) setState(remote);
+        setSync("saved");
+      } catch (error) {
+        setSync("error");
+        const latest = await fetch("/api/state", { headers: { Authorization: `Bearer ${token}` } }).then((response) => response.ok ? response.json() as Promise<AppState> : null).catch(() => null);
+        if (latest) {
+          serverSnapshot.current = latest;
+          if ((error as Error & { status?: number }).status === 409) {
+            setState(latest);
+            pushToast("数据已在其他客户端更新，已加载服务器最新版本", "info");
+          }
+        }
+      } finally {
+        syncing.current = false;
+      }
+    }, 700);
     return () => clearTimeout(timer);
-  }, [state, ready, authReady, token]);
+  }, [state, ready, authReady, token, pushToast]);
+
+  useEffect(() => {
+    if (!ready || !token) return;
+    const check = async () => {
+      if (syncing.current) return;
+      const local = stateRef.current;
+      const base = serverSnapshot.current;
+      if (!sameEntity(local.projects.map(projectPayload), base.projects.map(projectPayload)) ||
+          !sameEntity(local.tags.map(tagPayload), base.tags.map(tagPayload)) ||
+          !sameEntity(local.tasks.map(taskPayload), base.tasks.map(taskPayload))) return;
+      try {
+        const response = await fetch("/api/state/version", { headers: { Authorization: `Bearer ${token}` } });
+        if (!response.ok) return;
+        const { dataVersion } = await response.json() as { dataVersion: number };
+        if (dataVersion === (serverSnapshot.current.dataVersion || 0)) return;
+        const stateResponse = await fetch("/api/state", { headers: { Authorization: `Bearer ${token}` } });
+        if (!stateResponse.ok) return;
+        const remote = await stateResponse.json() as AppState;
+        serverSnapshot.current = remote;
+        setState(remote);
+        setSync("saved");
+        pushToast("已同步来自其他客户端的更新", "info");
+      } catch { /* 下一轮自动重试 */ }
+    };
+    const interval = window.setInterval(() => void check(), 5000);
+    return () => window.clearInterval(interval);
+  }, [ready, token, pushToast]);
   useEffect(() => setSubtaskTitle(""), [selectedId]);
   const setTask = useCallback(
     (id: string, patch: Partial<Task>) =>
@@ -2634,6 +2817,7 @@ export function GTDApp() {
             });
             if (!refreshed.ok) throw new Error("子任务已创建，请刷新页面查看");
             const nextState = (await refreshed.json()) as AppState;
+            serverSnapshot.current = nextState;
             setState(nextState);
             setAiTask(undefined);
             setMode("gantt");
@@ -2653,6 +2837,7 @@ export function GTDApp() {
           onSignOut={signOut}
           initialTab={settingsInitialTab}
           onConfirm={requestConfirm}
+          onToast={pushToast}
         />
       )}
       {dialog && <FriendlyDialog key={dialog.id} request={dialog} onClose={() => setDialog(undefined)} />}

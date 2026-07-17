@@ -1,0 +1,5 @@
+import { authError, requireUser } from "../_lib/auth";
+import { createTask, listTasks } from "../_lib/gtd";
+
+export async function GET(request:Request){try{const user=await requireUser(request),url=new URL(request.url);return Response.json(await listTasks(user.id,{query:url.searchParams.get("query")||undefined,view:url.searchParams.get("view")||undefined,projectId:url.searchParams.get("projectId")||undefined,status:(url.searchParams.get("status")||undefined) as any,tagId:url.searchParams.get("tagId")||undefined,context:url.searchParams.get("context")||undefined,important:url.searchParams.has("important")?url.searchParams.get("important")==="true":undefined,parentTaskId:url.searchParams.get("parentTaskId")||undefined,dueFrom:url.searchParams.get("dueFrom")||undefined,dueTo:url.searchParams.get("dueTo")||undefined,cursor:url.searchParams.get("cursor")||undefined,limit:Number(url.searchParams.get("limit"))||50}));}catch(error){return authError(error);}}
+export async function POST(request:Request){try{const user=await requireUser(request);return Response.json(await createTask(user.id,await request.json()),{status:201});}catch(error){return authError(error);}}

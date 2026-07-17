@@ -1,0 +1,24 @@
+import { randomUUID } from "node:crypto";
+import { query, withTransaction } from "../../../db/binding";
+import { assertPublicEndpoint, decryptSecret, validateBaseUrl } from "./crypto";
+import { bumpDataVersion, GtdError } from "./gtd";
+
+export type DecompositionItem={tempId:string;title:string;notes:string;estimate:number;startDate?:string;dueDate?:string;dependsOn:string[]};
+const validDate=(value?:string)=>value&&/^\d{4}-\d{2}-\d{2}$/.test(value)?value:null;
+
+export async function decomposeTaskWithAi(userId:string,input:{title:string;notes?:string;dueDate?:string;instruction?:string}) {
+  if(!input.title?.trim())throw new GtdError("任务标题不能为空");
+  const config=(await query<any>('SELECT base_url AS "baseUrl",model,encrypted_key AS "encryptedKey" FROM ai_configs WHERE user_id=$1',[userId])).rows[0];
+  if(!config)throw new GtdError("请先在 Web 设置中配置 AI 模型",409);
+  const baseUrl=validateBaseUrl(config.baseUrl);await assertPublicEndpoint(baseUrl);
+  const prompt=`你是 GTD 任务规划助手。请把任务拆成 3-8 个可执行步骤，并只输出 JSON：{"items":[{"tempId":"s1","title":"...","notes":"...","estimate":1,"startDate":"YYYY-MM-DD","dueDate":"YYYY-MM-DD","dependsOn":["s0"]}]}。estimate 是整数天；依赖只能引用前面的 tempId。任务：${input.title}\n备注：${input.notes||"无"}\n目标日期：${input.dueDate||"未指定"}\n补充要求：${input.instruction||"无"}`;
+  const response=await fetch(`${baseUrl}/chat/completions`,{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${await decryptSecret(config.encryptedKey)}`},body:JSON.stringify({model:config.model,temperature:0.2,messages:[{role:"system",content:"输出严格 JSON，不要 Markdown。"},{role:"user",content:prompt}]}),signal:AbortSignal.timeout(30000)});
+  if(!response.ok)throw new GtdError(`模型调用失败（${response.status}）`,502);
+  const raw=await response.json() as any;const text=raw.choices?.[0]?.message?.content?.replace(/^```json\s*|\s*```$/g,"");if(!text)throw new GtdError("模型没有返回可用内容",502);
+  const parsed=JSON.parse(text) as {items?:DecompositionItem[]};const items=Array.isArray(parsed.items)?parsed.items.slice(0,12).map((item,index)=>({tempId:String(item.tempId||`s${index+1}`),title:String(item.title||"").trim().slice(0,240),notes:String(item.notes||"").slice(0,2000),estimate:Math.max(1,Math.min(90,Number(item.estimate)||1)),startDate:validDate(item.startDate)||undefined,dueDate:validDate(item.dueDate)||undefined,dependsOn:Array.isArray(item.dependsOn)?item.dependsOn.map(String):[]})).filter((item)=>item.title):[];
+  if(!items.length)throw new GtdError("模型返回了空的任务列表",502);const previous=new Set<string>();for(const item of items){item.dependsOn=item.dependsOn.filter((id)=>previous.has(id));previous.add(item.tempId);}return{items};
+}
+
+export async function commitTaskDecomposition(userId:string,parentTaskId:string,items:DecompositionItem[]){
+  return withTransaction(async(client)=>{const parent=(await client.query<any>(`SELECT t.id,t.project_id AS "projectId",t.context,COALESCE(ARRAY_AGG(tt.tag_id) FILTER(WHERE tt.tag_id IS NOT NULL),ARRAY[]::TEXT[]) AS "tagIds" FROM tasks t LEFT JOIN task_tags tt ON tt.task_id=t.id WHERE t.id=$1 AND t.user_id=$2 GROUP BY t.id`,[parentTaskId,userId])).rows[0];if(!parent)throw new GtdError("父任务不存在",404);const list=Array.isArray(items)?items.slice(0,12):[];if(!list.length||list.some((x)=>!x.tempId||!x.title?.trim()))throw new GtdError("拆分草稿无效");if(new Set(list.map((x)=>x.tempId)).size!==list.length)throw new GtdError("拆分步骤标识不能重复");for(const item of list){if(item.startDate&&!validDate(item.startDate)||item.dueDate&&!validDate(item.dueDate))throw new GtdError("拆分步骤日期格式无效");if(item.startDate&&item.dueDate&&item.startDate>item.dueDate)throw new GtdError("拆分步骤开始日期不能晚于截止日期");}const map=new Map(list.map((x)=>[x.tempId,randomUUID()]));const previous=new Set<string>();for(const item of list){if((item.dependsOn||[]).some((id)=>!previous.has(id)))throw new GtdError("依赖只能指向前面的步骤");previous.add(item.tempId);}for(const[index,item]of list.entries()){const id=map.get(item.tempId)!;await client.query(`INSERT INTO tasks(id,user_id,project_id,parent_task_id,title,notes,status,context,important,start_date,due_date,estimate,sort_order,revision,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,'next',$7,FALSE,$8,$9,$10,$11,1,NOW(),NOW())`,[id,userId,parent.projectId||null,parent.id,item.title.trim().slice(0,240),(item.notes||"").slice(0,2000),parent.context||"",validDate(item.startDate),validDate(item.dueDate),Math.max(1,Math.min(90,Number(item.estimate)||1)),Date.now()+index]);for(const tag of parent.tagIds)await client.query("INSERT INTO task_tags(task_id,tag_id) VALUES($1,$2)",[id,tag]);for(const dep of item.dependsOn||[])await client.query("INSERT INTO task_dependencies(task_id,depends_on_task_id,user_id) VALUES($1,$2,$3)",[id,map.get(dep),userId]);}const dataVersion=await bumpDataVersion(client,userId);return{tasks:list.map((x)=>({...x,id:map.get(x.tempId),revision:1})),dataVersion};});
+}

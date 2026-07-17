@@ -36,7 +36,7 @@ test("ships the GTD Flow product shell", async () => {
 });
 
 test("ships PostgreSQL, self-hosted auth and AI security boundaries", async () => {
-  const [compose, dockerfile, migration, vectorMigration, health, auth, otp, crypto, ai, aiTest, state] = await Promise.all([
+  const [compose, dockerfile, migration, vectorMigration, health, auth, otp, crypto, ai, aiTasks, aiTest, state] = await Promise.all([
     readFile(new URL("../docker-compose.yml", import.meta.url), "utf8"),
     readFile(new URL("../Dockerfile", import.meta.url), "utf8"),
     readFile(
@@ -55,6 +55,7 @@ test("ships PostgreSQL, self-hosted auth and AI security boundaries", async () =
       new URL("../app/api/ai/decompose/route.ts", import.meta.url),
       "utf8",
     ),
+    readFile(new URL("../app/api/_lib/ai-tasks.ts", import.meta.url), "utf8"),
     readFile(
       new URL("../app/api/ai/config/test/route.ts", import.meta.url),
       "utf8",
@@ -75,7 +76,8 @@ test("ships PostgreSQL, self-hosted auth and AI security boundaries", async () =
   assert.match(crypto, /AES-GCM/);
   assert.match(crypto, /privateHost/);
   assert.match(crypto, /assertPublicEndpoint/);
-  assert.match(ai, /chat\/completions/);
+  assert.match(ai, /decomposeTaskWithAi/);
+  assert.match(aiTasks, /chat\/completions/);
   assert.match(aiTest, /chat\/completions/);
   assert.match(aiTest, /requireUser/);
   assert.match(aiTest, /15000/);
@@ -118,4 +120,31 @@ test("supports encrypted SMTP and Resend email providers", async () => {
   assert.match(config, /existing\.rows\[0\]\?\.provider === provider/);
   assert.doesNotMatch(config, /decryptSecret/);
   assert.match(migration, /provider IN \('smtp', 'resend'\)/);
+});
+
+test("ships authenticated MCP tools without exposing system settings", async () => {
+  const [server, auth, route, migration, app] = await Promise.all([
+    readFile(new URL("../app/api/_lib/mcp-server.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/_lib/mcp-auth.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/mcp/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../postgres/migrations/005_mcp_and_revisions.sql", import.meta.url), "utf8"),
+    readFile(new URL("../app/GTDApp.tsx", import.meta.url), "utf8"),
+  ]);
+  for (const tool of ["get_gtd_overview", "list_tasks", "create_task", "set_task_dependencies", "decompose_task_with_ai", "commit_task_decomposition"]) assert.match(server, new RegExp(`"${tool}"`));
+  assert.match(server, /registerDeleteTools\(server,principal,"task"\)/);
+  assert.match(server, /preview_delete_\$\{type\}/);
+  assert.match(server, /gtd:\/\/overview/);
+  assert.match(server, /gtd:\/\/views\/\{view\}/);
+  assert.match(server, /weekly_review/);
+  assert.match(server, /plan_my_day/);
+  assert.doesNotMatch(server, /registerTool\("(?:smtp|mail|ai_config|mcp_token|account|preferences)/);
+  assert.match(auth, /createHmac\("sha256"/);
+  assert.match(auth, /120/);
+  assert.match(route, /WebStandardStreamableHTTPServerTransport/);
+  assert.match(route, /Invalid origin/);
+  assert.match(migration, /mcp_delete_confirmations/);
+  assert.match(migration, /mcp_audit_logs/);
+  assert.match(app, /仅显示这一次/);
+  assert.match(app, /window\.setInterval/);
+  assert.match(app, /5000/);
 });
