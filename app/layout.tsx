@@ -21,6 +21,21 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title: "GTD Flow — 把想法变成下一步",
     description: "融合 GTD、可视化排期与 AI 任务拆分的个人效率工作台。",
+    applicationName: "GTD Flow",
+    manifest: "/manifest.webmanifest",
+    themeColor: "#111516",
+    appleWebApp: {
+      capable: true,
+      statusBarStyle: "black-translucent",
+      title: "GTD Flow",
+    },
+    icons: {
+      icon: [
+        { url: "/icon.svg", type: "image/svg+xml" },
+        { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+      ],
+      apple: [{ url: "/icon-192.png", sizes: "192x192", type: "image/png" }],
+    },
     openGraph: { title: "GTD Flow", description: "把复杂目标，变成清晰下一步", images: [{ url: image, width: 1200, height: 630 }] },
     twitter: { card: "summary_large_image", title: "GTD Flow", description: "把复杂目标，变成清晰下一步", images: [image] },
   };

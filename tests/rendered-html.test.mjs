@@ -39,6 +39,24 @@ test("ships the GTD Flow product shell", async () => {
   );
 });
 
+test("ships an installable Chrome app experience", async () => {
+  const [manifest, installer, worker, offline] = await Promise.all([
+    readFile(new URL("../app/manifest.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/PWAInstall.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../public/sw.js", import.meta.url), "utf8"),
+    readFile(new URL("../public/offline.html", import.meta.url), "utf8"),
+  ]);
+  assert.match(manifest, /display: "standalone"/);
+  assert.match(manifest, /icon-192\.png/);
+  assert.match(manifest, /icon-maskable-512\.png/);
+  assert.match(manifest, /shortcuts/);
+  assert.match(installer, /beforeinstallprompt/);
+  assert.match(installer, /serviceWorker\.register/);
+  assert.match(worker, /event\.request\.mode !== "navigate"/);
+  assert.match(worker, /offline\.html/);
+  assert.match(offline, /重新连接/);
+});
+
 test("ships PostgreSQL, self-hosted auth and AI security boundaries", async () => {
   const [compose, dockerfile, migration, vectorMigration, health, auth, otp, crypto, ai, aiTasks, aiTest, state] = await Promise.all([
     readFile(new URL("../docker-compose.yml", import.meta.url), "utf8"),

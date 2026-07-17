@@ -23,9 +23,16 @@ body {
   background: var(--bg);
   color: var(--text);
 }
+html {
+  background: var(--bg);
+}
 body {
   font-family: Arial, "Microsoft YaHei", sans-serif;
   overflow: hidden;
+  padding-top: env(safe-area-inset-top);
+  padding-right: env(safe-area-inset-right);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
 }
 button,
 input,
@@ -149,6 +156,33 @@ select:focus-visible {
   border-radius: 9px !important;
   font-weight: 800 !important;
 }
+.install-app {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px;
+  border: 1px solid #3d4a49;
+  border-radius: 8px;
+  background: #202728;
+  color: #b8c4c3;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.install-app:hover {
+  border-color: #69d2c877;
+  background: #253130;
+  color: #e8f5f3;
+}
+.install-app span {
+  color: var(--accent);
+  font-size: 15px;
+  line-height: 1;
+}
+@media (display-mode: standalone) {
+  .install-app { display: none; }
+}
 .auth-visual {
   position: relative;
   overflow: hidden;
@@ -259,6 +293,16 @@ select:focus-visible {
 .account button {
   background: none;
   color: var(--muted);
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+.account button:hover {
+  color: #dce7e5;
+  background: #252c2d;
 }
 .demo-badge {
   margin: 0 6px 12px;
@@ -299,6 +343,15 @@ select:focus-visible {
   font-size: 12px;
   outline: 0;
 }
+.search > span {
+  display: grid;
+  place-items: center;
+}
+.svg-icon {
+  display: block;
+  flex: none;
+  overflow: visible;
+}
 .sidebar nav {
   display: grid;
   gap: 2px;
@@ -328,7 +381,19 @@ select:focus-visible {
 .sidebar nav button i {
   font-style: normal;
   color: #82aaa6;
-  font-size: 17px;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+.sidebar nav button:hover i {
+  color: #9adbd4;
+}
+.sidebar nav button.active i {
+  color: #73ddd3;
+  background: #69d2c814;
 }
 .sidebar nav button span,
 .projects > button span {
@@ -366,7 +431,15 @@ select:focus-visible {
 .projects > div button {
   background: none;
   color: var(--muted);
-  font-size: 18px;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+}
+.projects > div button:hover {
+  color: var(--accent);
+  background: #69d2c812;
 }
 .projects > button i {
   width: 8px;
@@ -384,6 +457,9 @@ select:focus-visible {
 .sync {
   font-size: 10px;
   color: #71807f;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
 }
 .sync.error {
   color: var(--danger);
@@ -391,10 +467,15 @@ select:focus-visible {
 .sidebar-foot button {
   background: none;
   color: #73807f;
-  font-size: 16px;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
 }
 .sidebar-foot button:hover {
   color: var(--accent);
+  background: #69d2c812;
 }
 
 /* Settings */
@@ -857,7 +938,7 @@ select:focus-visible {
   display: none;
   background: none;
   color: white;
-  font-size: 20px;
+  place-items: center;
 }
 .view-switch {
   display: flex;
@@ -872,6 +953,9 @@ select:focus-visible {
   padding: 8px 13px;
   border-radius: 6px;
   font-size: 11px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 .view-switch button.active {
   background: #35403f;

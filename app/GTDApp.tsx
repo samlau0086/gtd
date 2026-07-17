@@ -4,6 +4,7 @@ import {
   FormEvent,
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
+  ReactNode,
   useCallback,
   useEffect,
   useMemo,
@@ -11,6 +12,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import { PWAInstall } from "./PWAInstall";
 
 type Status = "inbox" | "next" | "waiting" | "scheduled" | "someday" | "done";
 type Project = { id: string; name: string; color: string; revision?: number; updatedAt?: string };
@@ -239,16 +241,45 @@ const freshSeedState = (): AppState => {
   };
 };
 
-const NAV: Array<{ key: ViewKey; icon: string; label: string }> = [
-  { key: "inbox", icon: "⌄", label: "收集箱" },
-  { key: "today", icon: "☀", label: "今天" },
-  { key: "next", icon: "→", label: "下一步" },
-  { key: "projects", icon: "▦", label: "项目" },
-  { key: "waiting", icon: "◌", label: "等待中" },
-  { key: "scheduled", icon: "□", label: "日程" },
-  { key: "someday", icon: "◇", label: "将来 / 也许" },
-  { key: "review", icon: "↻", label: "每周回顾" },
-  { key: "completed", icon: "✓", label: "已完成" },
+type IconName =
+  | "inbox" | "sun" | "arrow-right" | "projects" | "clock" | "calendar"
+  | "sparkles" | "review" | "check" | "chevron-down" | "search" | "plus"
+  | "settings" | "menu" | "list" | "gantt" | "cloud-check";
+
+const ICON_PATHS: Record<IconName, ReactNode> = {
+  inbox: <><path d="M4 4h16l1.5 11.5A4 4 0 0 1 17.5 20h-11a4 4 0 0 1-4-4.5L4 4Z"/><path d="M3 14h5l1.5 2h5l1.5-2h5"/></>,
+  sun: <><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.65 17.65l1.42 1.42M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.65 6.35l1.42-1.42"/></>,
+  "arrow-right": <><circle cx="12" cy="12" r="9"/><path d="m10 8 4 4-4 4M7 12h7"/></>,
+  projects: <><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></>,
+  clock: <><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></>,
+  calendar: <><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/></>,
+  sparkles: <><path d="m12 3-1 3.2A5.5 5.5 0 0 1 7.2 10L4 11l3.2 1a5.5 5.5 0 0 1 3.8 3.8l1 3.2 1-3.2a5.5 5.5 0 0 1 3.8-3.8l3.2-1-3.2-1A5.5 5.5 0 0 1 13 6.2L12 3Z"/></>,
+  review: <><path d="M20 7v5h-5"/><path d="M19 12a7 7 0 1 1-2-5l3 3"/></>,
+  check: <><circle cx="12" cy="12" r="9"/><path d="m8 12 2.7 2.7L16.5 9"/></>,
+  "chevron-down": <path d="m7 9.5 5 5 5-5"/>,
+  search: <><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></>,
+  plus: <path d="M12 5v14M5 12h14"/>,
+  settings: <><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.55V21h-4v-.08A1.7 1.7 0 0 0 8.94 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.52-1.03H3v-4h.08A1.7 1.7 0 0 0 4.6 8.94a1.7 1.7 0 0 0-.34-1.88L4.2 7l2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.52V3h4v.08A1.7 1.7 0 0 0 15.06 4.6a1.7 1.7 0 0 0 1.88-.34L17 4.2 19.83 7l-.06.06A1.7 1.7 0 0 0 19.4 9c.16.6.72 1 1.52 1H21v4h-.08c-.8 0-1.36.4-1.52 1Z"/></>,
+  menu: <path d="M4 7h16M4 12h16M4 17h16"/>,
+  list: <><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r=".5" fill="currentColor" stroke="none"/><circle cx="4.5" cy="12" r=".5" fill="currentColor" stroke="none"/><circle cx="4.5" cy="18" r=".5" fill="currentColor" stroke="none"/></>,
+  gantt: <><path d="M4 6h7M4 12h13M4 18h10"/><path d="M11 4v4M17 10v4M14 16v4"/></>,
+  "cloud-check": <><path d="M17.5 19H7a5 5 0 1 1 1.3-9.83A6 6 0 0 1 20 11a4 4 0 0 1-2.5 8Z"/><path d="m9 14 2 2 4-4"/></>,
+};
+
+function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
+  return <svg className="svg-icon" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{ICON_PATHS[name]}</svg>;
+}
+
+const NAV: Array<{ key: ViewKey; icon: IconName; label: string }> = [
+  { key: "inbox", icon: "inbox", label: "收集箱" },
+  { key: "today", icon: "sun", label: "今天" },
+  { key: "next", icon: "arrow-right", label: "下一步" },
+  { key: "projects", icon: "projects", label: "项目" },
+  { key: "waiting", icon: "clock", label: "等待中" },
+  { key: "scheduled", icon: "calendar", label: "日程" },
+  { key: "someday", icon: "sparkles", label: "将来 / 也许" },
+  { key: "review", icon: "review", label: "每周回顾" },
+  { key: "completed", icon: "check", label: "已完成" },
 ];
 
 function AuthScreen({
@@ -1913,12 +1944,17 @@ export function GTDApp() {
       .catch(() => setAuthConfig(null));
   }, []);
   useEffect(() => {
+    const requestedView = new URLSearchParams(window.location.search).get("view") as ViewKey | null;
     const stored = localStorage.getItem("gtdflow-preferences");
-    if (!stored) return;
+    if (!stored) {
+      if (requestedView && NAV.some((item) => item.key === requestedView)) setView(requestedView);
+      return;
+    }
     try {
       const next = JSON.parse(stored) as Partial<UserPreferences>;
       setPreferences((current) => ({ ...current, ...next }));
-      if (next.defaultView) setView(next.defaultView);
+      if (requestedView && NAV.some((item) => item.key === requestedView)) setView(requestedView);
+      else if (next.defaultView) setView(next.defaultView);
     } catch {
       localStorage.removeItem("gtdflow-preferences");
     }
@@ -2395,12 +2431,14 @@ export function GTDApp() {
           </div>
           <button
             onClick={signOut}
+            aria-label="退出登录"
+            title="退出登录"
           >
-            ⌄
+            <Icon name="chevron-down" size={16} />
           </button>
         </div>
         <label className="search">
-          <span>⌕</span>
+          <span><Icon name="search" size={16} /></span>
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -2418,7 +2456,7 @@ export function GTDApp() {
                 setNavOpen(false);
               }}
             >
-              <i>{item.icon}</i>
+              <i><Icon name={item.icon} /></i>
               <span>{item.label}</span>
               {counts[item.key] ? <b>{counts[item.key]}</b> : null}
             </button>
@@ -2438,7 +2476,7 @@ export function GTDApp() {
                 pushToast(`项目“${name}”已创建`);
               }}
             >
-              ＋
+              <Icon name="plus" size={16} />
             </button>
           </div>
           {state.projects.map((project) => (
@@ -2466,21 +2504,22 @@ export function GTDApp() {
         </div>
         <div className="sidebar-foot">
           <span className={`sync ${sync}`}>
+            {sync === "saved" && <Icon name="cloud-check" size={14} />}
             {sync === "saving"
               ? "同步中…"
               : sync === "error"
                 ? "同步失败"
-                : "✓ 已同步"}
+                : "已同步"}
           </span>
           <button onClick={() => setSettingsOpen(true)} aria-label="打开设置" title="设置">
-            ⚙
+            <Icon name="settings" size={17} />
           </button>
         </div>
       </aside>
       <section className="workspace">
         <header className="topbar">
           <button className="mobile-menu" onClick={() => setNavOpen(!navOpen)}>
-            ☰
+            <Icon name="menu" />
           </button>
           <div>
             <span className="eyebrow">GTD FLOW</span>
@@ -2495,15 +2534,16 @@ export function GTDApp() {
               className={mode === "list" ? "active" : ""}
               onClick={() => setMode("list")}
             >
-              ☷ 列表
+              <Icon name="list" size={14} />列表
             </button>
             <button
               className={mode === "gantt" ? "active" : ""}
               onClick={() => setMode("gantt")}
             >
-              ▥ 甘特
+              <Icon name="gantt" size={14} />甘特
             </button>
           </div>
+          <PWAInstall />
         </header>
         {view === "review" && (
           <div className="review-banner">

@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+    <meta name="theme-color" content="#111516" />
+    <title>GTD Flow · 暂时离线</title>
+    <style>
+      :root { color-scheme: dark; font-family: Arial, "Microsoft YaHei", sans-serif; }
+      * { box-sizing: border-box; }
+      body { min-height: 100vh; margin: 0; display: grid; place-items: center; padding: 28px; background: radial-gradient(circle at 50% 20%, #1b3c39, transparent 38%), #111516; color: #eef4f3; }
+      main { width: min(420px, 100%); padding: 34px; border: 1px solid #303839; border-radius: 22px; background: #181d1ee8; box-shadow: 0 30px 90px #0009; text-align: center; }
+      .mark { width: 64px; height: 64px; margin: 0 auto 24px; display: grid; place-items: center; border-radius: 19px; background: linear-gradient(145deg, #83e2d8, #42a99f); color: #102322; font-size: 29px; font-weight: 900; }
+      h1 { margin: 0; font-size: 25px; }
+      p { margin: 13px 0 24px; color: #9ca8a7; line-height: 1.7; }
+      button { border: 0; border-radius: 10px; padding: 12px 20px; background: #69d2c8; color: #102120; font: inherit; font-weight: 800; cursor: pointer; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="mark">G</div>
+      <h1>暂时无法连接</h1>
+      <p>GTD Flow 需要联网同步任务。网络恢复后，点击下方按钮即可继续。</p>
+      <button onclick="location.reload()">重新连接</button>
+    </main>
+  </body>
+</html>
