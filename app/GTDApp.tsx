@@ -909,16 +909,20 @@ function Gantt({
   tasks,
   projects,
   weekStartsOn,
+  selectedId,
   onChange,
   onSelect,
 }: {
   tasks: Task[];
   projects: Project[];
   weekStartsOn: "monday" | "sunday";
+  selectedId?: string;
   onChange: (id: string, patch: Partial<Task>) => void;
   onSelect: (id: string) => void;
 }) {
   const [zoom, setZoom] = useState<"day" | "week" | "month">("week");
+  const [viewportWidth, setViewportWidth] = useState(0);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const scheduled = tasks.filter(
     (task) => task.startDate && task.dueDate && task.status !== "done",
   );
@@ -929,8 +933,19 @@ function Gantt({
     scheduled.map((task) => task.startDate!).sort()[0] || today();
   const start = startOfWeek(earliest, weekStartsOn);
   const days = zoom === "month" ? 90 : zoom === "week" ? 42 : 21;
-  const cell = zoom === "month" ? 9 : zoom === "week" ? 24 : 48;
+  const baseCell = zoom === "month" ? 9 : zoom === "week" ? 24 : 48;
+  const cell = Math.max(baseCell, viewportWidth > 260 ? (viewportWidth - 260) / days : baseCell);
+  const gridWidth = Math.max(viewportWidth, 260 + days * cell);
   const columns = Array.from({ length: days }, (_, i) => addDays(start, i));
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (!element) return;
+    const update = () => setViewportWidth(element.clientWidth);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
   const beginDrag = (
     event: ReactPointerEvent,
     task: Task,
@@ -992,8 +1007,8 @@ function Gantt({
           ))}
         </div>
       </div>
-      <div className="gantt-scroll">
-        <div className="gantt-grid" style={{ width: 260 + days * cell }}>
+      <div className="gantt-scroll" ref={scrollRef}>
+        <div className="gantt-grid" style={{ width: gridWidth }}>
           <div className="gantt-corner">任务</div>
           <div
             className="gantt-dates"
@@ -1013,7 +1028,7 @@ function Gantt({
           </div>
           <div className="gantt-names">
             {scheduled.map((task) => (
-              <button key={task.id} onClick={() => onSelect(task.id)}>
+              <button key={task.id} className={selectedId === task.id ? "selected" : ""} aria-selected={selectedId === task.id} onClick={() => onSelect(task.id)}>
                 <i
                   style={{
                     background:
@@ -1034,6 +1049,7 @@ function Gantt({
               backgroundSize: `${cell}px 50px`,
             }}
           >
+            {selectedId && scheduled.some((task) => task.id === selectedId) && <div className="gantt-selected-row" style={{ top: scheduled.findIndex((task) => task.id === selectedId) * 50 }} />}
             <DependencyLines tasks={scheduled} start={start} cell={cell} />
             {scheduled.map((task, row) => {
               const left =
@@ -1056,7 +1072,8 @@ function Gantt({
               return (
                 <div
                   key={task.id}
-                  className="gantt-bar"
+                  className={`gantt-bar ${selectedId === task.id ? "selected" : ""}`}
+                  aria-selected={selectedId === task.id}
                   onPointerDown={(e) => beginDrag(e, task, "move")}
                   onClick={() => onSelect(task.id)}
                   style={{
@@ -1080,12 +1097,13 @@ function Gantt({
           {unscheduled.slice(0, 6).map((task) => (
             <button
               key={task.id}
-              onClick={() =>
+              onClick={() => {
+                onSelect(task.id);
                 onChange(task.id, {
                   startDate: today(),
                   dueDate: addDays(today(), Math.max(0, task.estimate - 1)),
-                })
-              }
+                });
+              }}
             >
               ＋ {task.title}
             </button>
@@ -2508,15 +2526,16 @@ export function GTDApp() {
             </form>
           </div>
         ) : (
-          <Gantt
+              <Gantt
             tasks={
               visible.length
                 ? visible
                 : state.tasks.filter((task) => task.status !== "done")
             }
-            projects={state.projects}
-            weekStartsOn={preferences.weekStartsOn}
-            onChange={setTask}
+                projects={state.projects}
+                weekStartsOn={preferences.weekStartsOn}
+                selectedId={selectedId}
+                onChange={setTask}
             onSelect={setSelectedId}
           />
         )}

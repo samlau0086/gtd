@@ -1609,6 +1609,11 @@ select:focus-visible {
 .gantt-names button:hover {
   background: #202627;
 }
+.gantt-names button.selected {
+  background: #243332;
+  box-shadow: inset 3px 0 0 var(--accent);
+  color: #f1f7f6;
+}
 .gantt-names i {
   width: 7px;
   height: 7px;
@@ -1632,6 +1637,17 @@ select:focus-visible {
     linear-gradient(to right, #252c2d 1px, transparent 1px),
     linear-gradient(to bottom, #252c2d 1px, transparent 1px);
 }
+.gantt-selected-row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 50px;
+  border-top: 1px solid #69d2c828;
+  border-bottom: 1px solid #69d2c828;
+  background: #69d2c80b;
+  pointer-events: none;
+  z-index: 1;
+}
 .gantt-bar {
   position: absolute;
   height: 26px;
@@ -1649,6 +1665,12 @@ select:focus-visible {
 }
 .gantt-bar:active {
   cursor: grabbing;
+}
+.gantt-bar.selected {
+  outline: 2px solid #d8fffb;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 5px #69d2c820, 0 8px 22px #0008;
+  z-index: 5;
 }
 .gantt-bar span {
   font-size: 9px;
