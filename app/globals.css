@@ -1144,6 +1144,9 @@ select:focus-visible {
   overflow: auto;
   padding: 7px 0 90px;
 }
+.task-swipe-delete {
+  display: none;
+}
 .task-row {
   min-height: 68px;
   display: grid;
@@ -2751,6 +2754,7 @@ select:focus-visible {
     grid-column: 2;
     grid-row: 1;
     align-self: start;
+    margin-right: 48px;
     height: 40px;
     border-radius: 20px;
     background: color-mix(in srgb, var(--panel) 72%, transparent);
@@ -2794,19 +2798,51 @@ select:focus-visible {
   .task-list::-webkit-scrollbar {
     display: none;
   }
+  .task-swipe {
+    position: relative;
+    margin: 5px 0;
+    overflow: hidden;
+    border-radius: 15px;
+    touch-action: pan-y;
+  }
+  .task-swipe-delete {
+    position: absolute;
+    inset: 0 0 0 auto;
+    width: 88px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    border-radius: 0 15px 15px 0;
+    background: #e5484d;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .task-swipe-delete:active {
+    background: #cf3f44;
+  }
   .task-row,
   .density-compact .task-row {
     min-height: 78px;
     grid-template-columns: 44px minmax(0, 1fr) 40px;
-    margin: 5px 0;
+    margin: 0;
     padding: 8px 10px;
     border: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
     border-radius: 15px;
     background: color-mix(in srgb, var(--panel) 94%, var(--accent) 6%);
     box-shadow: 0 5px 18px #0000000a;
+    will-change: transform;
+    transform: translateX(var(--swipe-offset, 0));
+    transition: transform .2s cubic-bezier(.22, 1, .36, 1), border-color .15s ease, box-shadow .15s ease, background .15s ease;
+    touch-action: pan-y;
+  }
+  .task-swipe.dragging .task-row {
+    transition: none;
   }
   .task-row:hover {
-    transform: none;
+    transform: translateX(var(--swipe-offset, 0));
   }
   .task-row.active {
     border-color: color-mix(in srgb, var(--accent) 45%, var(--line));

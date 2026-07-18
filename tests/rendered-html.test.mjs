@@ -27,6 +27,8 @@ test("ships the GTD Flow product shell", async () => {
   assert.match(app, /function ToastStack/);
   assert.match(app, /function TaskContextMenu/);
   assert.match(app, /deleteTaskWithConfirmation/);
+  assert.match(app, /task-swipe-delete/);
+  assert.match(app, /onSwipeOpen/);
   assert.match(app, /editProject/);
   assert.match(app, /deleteProjectWithConfirmation/);
   assert.match(app, /编辑项目/);

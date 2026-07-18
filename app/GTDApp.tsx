@@ -455,34 +455,101 @@ function TaskRow({
   task,
   active,
   project,
+  swipeOpen,
   onSelect,
   onToggle,
   onImportant,
+  onSwipeOpen,
+  onSwipeClose,
+  onDelete,
   stepProgress,
   onOpenMenu,
 }: {
   task: Task;
   active: boolean;
   project?: Project;
+  swipeOpen: boolean;
   onSelect: () => void;
   onToggle: () => void;
   onImportant: () => void;
+  onSwipeOpen: () => void;
+  onSwipeClose: () => void;
+  onDelete: () => void;
   stepProgress?: { done: number; total: number };
   onOpenMenu: (event: ReactMouseEvent<HTMLElement>) => void;
 }) {
+  const actionWidth = 88;
+  const [dragOffset, setDragOffset] = useState<number>();
+  const gesture = useRef<{ pointerId: number; startX: number; startY: number; startOffset: number; axis?: "x" | "y" } | undefined>(undefined);
+  const suppressClick = useRef(false);
   const theme = themeForProject(project);
   const projectStyle = project ? ({
     "--project-background": theme.backgroundColor,
     "--project-text": theme.textColor,
     "--project-border": theme.borderColor,
   } as CSSProperties) : undefined;
+  const offset = dragOffset ?? (swipeOpen ? -actionWidth : 0);
+  const finishSwipe = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const current = gesture.current;
+    if (!current || current.pointerId !== event.pointerId) return;
+    if (current.axis === "x") {
+      suppressClick.current = true;
+      const finalOffset = Math.max(-actionWidth, Math.min(0, current.startOffset + event.clientX - current.startX));
+      if (finalOffset < -actionWidth / 2) onSwipeOpen();
+      else onSwipeClose();
+    }
+    gesture.current = undefined;
+    setDragOffset(undefined);
+  };
   return (
-    <article
-      className={`task-row ${project ? "project-themed" : ""} ${active ? "active" : ""}`}
-      style={projectStyle}
-      onClick={onSelect}
-      onContextMenu={onOpenMenu}
+    <div
+      className={`task-swipe ${swipeOpen ? "open" : ""} ${dragOffset !== undefined ? "dragging" : ""}`}
+      data-task-id={task.id}
+      onPointerDown={(event) => {
+        if (event.pointerType === "mouse" || !window.matchMedia("(max-width: 720px)").matches) return;
+        gesture.current = { pointerId:event.pointerId, startX:event.clientX, startY:event.clientY, startOffset:swipeOpen ? -actionWidth : 0 };
+        event.currentTarget.setPointerCapture(event.pointerId);
+      }}
+      onPointerMove={(event) => {
+        const current = gesture.current;
+        if (!current || current.pointerId !== event.pointerId) return;
+        const dx = event.clientX - current.startX;
+        const dy = event.clientY - current.startY;
+        if (!current.axis && Math.max(Math.abs(dx), Math.abs(dy)) > 7) current.axis = Math.abs(dx) > Math.abs(dy) ? "x" : "y";
+        if (current.axis !== "x") return;
+        event.preventDefault();
+        setDragOffset(Math.max(-actionWidth, Math.min(0, current.startOffset + dx)));
+      }}
+      onPointerUp={finishSwipe}
+      onPointerCancel={finishSwipe}
     >
+      <button
+        type="button"
+        className="task-swipe-delete"
+        aria-label={`删除任务 ${task.title}`}
+        tabIndex={swipeOpen ? 0 : -1}
+        onClick={(event) => {
+          event.stopPropagation();
+          onSwipeClose();
+          onDelete();
+        }}
+      >
+        <Icon name="trash" size={24} />
+        <span>删除</span>
+      </button>
+      <article
+        className={`task-row ${project ? "project-themed" : ""} ${active ? "active" : ""}`}
+        style={{ ...projectStyle, "--swipe-offset":`${offset}px` } as CSSProperties}
+        onClick={() => {
+          if (suppressClick.current) {
+            suppressClick.current = false;
+            return;
+          }
+          if (swipeOpen) onSwipeClose();
+          else onSelect();
+        }}
+        onContextMenu={onOpenMenu}
+      >
       <button
         className={`check ${task.status === "done" ? "checked" : ""}`}
         onClick={(e) => {
@@ -533,7 +600,8 @@ function TaskRow({
       >
         ☆
       </button>
-    </article>
+      </article>
+    </div>
   );
 }
 
@@ -2051,6 +2119,7 @@ export function GTDApp() {
   const [sync, setSync] = useState<"saved" | "saving" | "error">("saved");
   const [subtaskTitle, setSubtaskTitle] = useState("");
   const [contextMenu, setContextMenu] = useState<{ taskId:string; x:number; y:number }>();
+  const [swipedTaskId, setSwipedTaskId] = useState<string>();
   const [dialog, setDialog] = useState<DialogRequest>();
   const [projectEditor, setProjectEditor] = useState<{ project?: Project; defaultTheme: ProjectTheme }>();
   const [toasts, setToasts] = useState<ToastItem[]>([]);
@@ -2628,6 +2697,7 @@ export function GTDApp() {
                 setSettingsInitialTab("account");
                 setSettingsOpen(true);
                 setAccountMenuOpen(false);
+                setNavOpen(false);
               }}>
                 <Icon name="user" size={20} />
                 <span>账号与同步</span>
@@ -2636,6 +2706,7 @@ export function GTDApp() {
                 setSettingsInitialTab("general");
                 setSettingsOpen(true);
                 setAccountMenuOpen(false);
+                setNavOpen(false);
               }}>
                 <Icon name="settings" size={20} />
                 <span>设置</span>
@@ -2711,7 +2782,11 @@ export function GTDApp() {
                 ? "同步失败"
                 : "已同步"}
           </span>
-          <button onClick={() => setSettingsOpen(true)} aria-label="打开设置" title="设置">
+          <button onClick={() => {
+            setSettingsInitialTab("general");
+            setSettingsOpen(true);
+            setNavOpen(false);
+          }} aria-label="打开设置" title="设置">
             <Icon name="settings" size={17} />
           </button>
         </div>
@@ -2768,13 +2843,18 @@ export function GTDApp() {
               <span>{visible.length} 项</span>
               <button>排序：智能</button>
             </div>
-            <div className="task-list">
+            <div className="task-list" onPointerDown={(event) => {
+              if (!swipedTaskId) return;
+              const row = (event.target as HTMLElement).closest<HTMLElement>("[data-task-id]");
+              if (row?.dataset.taskId !== swipedTaskId) setSwipedTaskId(undefined);
+            }}>
               {visible.length ? (
                 visible.map((task) => (
                   <TaskRow
                     key={task.id}
                     task={task}
                     active={task.id === selectedId}
+                    swipeOpen={task.id === swipedTaskId}
                     project={state.projects.find(
                       (p) => p.id === task.projectId,
                     )}
@@ -2797,6 +2877,9 @@ export function GTDApp() {
                     onImportant={() =>
                       setTask(task.id, { important: !task.important })
                     }
+                    onSwipeOpen={() => setSwipedTaskId(task.id)}
+                    onSwipeClose={() => setSwipedTaskId(undefined)}
+                    onDelete={() => void deleteTaskWithConfirmation(task)}
                     onOpenMenu={(event) => {
                       event.preventDefault();
                       setSelectedId(task.id);
