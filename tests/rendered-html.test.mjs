@@ -229,3 +229,13 @@ test("ships authenticated MCP tools without exposing system settings", async () 
   assert.match(app, /window\.setInterval/);
   assert.match(app, /5000/);
 });
+
+test("keeps AI decomposition sort orders within PostgreSQL INTEGER range", async () => {
+  const source = await readFile(
+    new URL("../app/api/_lib/ai-tasks.ts", import.meta.url),
+    "utf8",
+  );
+  assert.doesNotMatch(source, /Date\.now\(\)\s*\+\s*index/);
+  assert.match(source, /MAX\(sort_order::BIGINT\)/);
+  assert.match(source, /nextSortOrder\+index/);
+});
