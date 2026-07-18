@@ -74,6 +74,7 @@ type UserPreferences = {
 type ViewKey =
   | "inbox"
   | "today"
+  | "important"
   | "next"
   | "projects"
   | "waiting"
@@ -268,13 +269,14 @@ const freshSeedState = (): AppState => {
 };
 
 type IconName =
-  | "inbox" | "sun" | "arrow-right" | "projects" | "clock" | "calendar"
+  | "inbox" | "sun" | "star" | "arrow-right" | "projects" | "clock" | "calendar"
   | "sparkles" | "review" | "check" | "chevron-down" | "search" | "plus"
   | "settings" | "menu" | "list" | "gantt" | "cloud-check" | "edit" | "trash" | "user";
 
 const ICON_PATHS: Record<IconName, ReactNode> = {
   inbox: <><path d="M4 4h16l1.5 11.5A4 4 0 0 1 17.5 20h-11a4 4 0 0 1-4-4.5L4 4Z"/><path d="M3 14h5l1.5 2h5l1.5-2h5"/></>,
   sun: <><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.65 17.65l1.42 1.42M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.65 6.35l1.42-1.42"/></>,
+  star: <path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-2.9-5.6 2.9 1.1-6.2L3 9.6l6.2-.9L12 3Z"/>,
   "arrow-right": <><circle cx="12" cy="12" r="9"/><path d="m10 8 4 4-4 4M7 12h7"/></>,
   projects: <><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></>,
   clock: <><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></>,
@@ -302,6 +304,7 @@ function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
 const NAV: Array<{ key: ViewKey; icon: IconName; label: string }> = [
   { key: "inbox", icon: "inbox", label: "收集箱" },
   { key: "today", icon: "sun", label: "今天" },
+  { key: "important", icon: "star", label: "重要" },
   { key: "next", icon: "arrow-right", label: "下一步" },
   { key: "projects", icon: "projects", label: "项目" },
   { key: "waiting", icon: "clock", label: "等待中" },
@@ -596,9 +599,11 @@ function TaskRow({
           e.stopPropagation();
           onImportant();
         }}
-        aria-label="重要"
+        aria-label={task.important ? "取消重要标记" : "标记为重要"}
+        aria-pressed={task.important}
+        title={task.important ? "取消重要标记" : "标记为重要"}
       >
-        ☆
+        {task.important ? "★" : "☆"}
       </button>
       </article>
     </div>
@@ -723,7 +728,7 @@ function TaskContextMenu({ task, projects, x, y, onPatch, onDelete, onAI, onToas
     <div ref={ref} className="task-context-menu" style={{ left, top }} role="menu" aria-label={`${task.title} 的快捷操作`}>
       <header><strong>{task.title}</strong><span>快捷操作</span></header>
       <button role="menuitem" onClick={() => run({ startDate:today(), dueDate:today(), status:"next" }, "已添加到今天")}><i>☀</i><span>添加到“今天”</span></button>
-      <button role="menuitem" onClick={() => run({ important:!task.important }, task.important ? "已取消重要标记" : "已标记为重要")}><i>☆</i><span>{task.important ? "取消重要标记" : "标记为重要"}</span></button>
+      <button role="menuitem" onClick={() => run({ important:!task.important }, task.important ? "已取消重要标记" : "已标记为重要")}><i>{task.important ? "★" : "☆"}</i><span>{task.important ? "取消重要标记" : "标记为重要"}</span></button>
       <button role="menuitem" onClick={() => run({ status:task.status === "done" ? "next" : "done" }, task.status === "done" ? "任务已恢复" : "任务已完成")}><i>✓</i><span>{task.status === "done" ? "标记为未完成" : "标记为已完成"}</span></button>
       <div className="context-separator" />
       <button role="menuitem" onClick={() => run({ dueDate:today() }, "截止日期已设为今天")}><i>□</i><span>今天到期</span></button>
@@ -1142,8 +1147,9 @@ function Gantt({
       row: Math.max(0, Math.floor((event.clientY - rect.top) / 50)),
     };
   };
+  const isMobileGanttViewport = () => window.matchMedia("(max-width: 720px)").matches;
   const beginCreateRange = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if ((event.target as HTMLElement).closest(".gantt-bar")) return;
+    if (isMobileGanttViewport() || (event.target as HTMLElement).closest(".gantt-bar")) return;
     const rect = event.currentTarget.getBoundingClientRect();
     const origin = canvasCell(event);
     const startX = event.clientX;
@@ -1208,8 +1214,11 @@ function Gantt({
       <div className="gantt-toolbar">
         <div>
           <strong>项目时间轴</strong>
-          <span>
+          <span className="gantt-desktop-hint">
             {scheduled.length} 项已排期 · {unscheduled.length} 项待排期 · 双击或拖拽空白网格新建
+          </span>
+          <span className="gantt-mobile-hint">
+            {scheduled.length} 项已排期 · 点击空白单元格新建任务
           </span>
         </div>
         <div className="zoom">
@@ -1260,15 +1269,20 @@ function Gantt({
           </div>
           <div
             className="gantt-canvas"
-            aria-label="甘特时间轴，双击单日或拖拽日期范围新建任务"
+            aria-label="甘特时间轴空白网格"
             onPointerDown={beginCreateRange}
             onPointerMove={(event) => {
               if (!draftRange && !(event.target as HTMLElement).closest(".gantt-bar")) setHoverCell(canvasCell(event));
               else if ((event.target as HTMLElement).closest(".gantt-bar")) setHoverCell(undefined);
             }}
             onPointerLeave={() => !draftRange && setHoverCell(undefined)}
+            onClick={(event) => {
+              if (!isMobileGanttViewport() || (event.target as HTMLElement).closest(".gantt-bar")) return;
+              const { column } = canvasCell(event);
+              onCreateRange(columns[column], columns[column]);
+            }}
             onDoubleClick={(event) => {
-              if ((event.target as HTMLElement).closest(".gantt-bar")) return;
+              if (isMobileGanttViewport() || (event.target as HTMLElement).closest(".gantt-bar")) return;
               const { column } = canvasCell(event);
               onCreateRange(columns[column], columns[column]);
             }}
@@ -2521,6 +2535,8 @@ export function GTDApp() {
               : key === "today"
                 ? task.status !== "done" &&
                   (task.dueDate === today() || task.startDate === today())
+                : key === "important"
+                  ? task.status !== "done" && task.important
                 : key === "projects"
                   ? task.status !== "done" && Boolean(task.projectId)
                   : key === "review"
@@ -2548,6 +2564,8 @@ export function GTDApp() {
             task.status !== "done" &&
             (task.dueDate === today() || task.startDate === today())
           );
+        if (view === "important")
+          return task.status !== "done" && task.important;
         if (view === "projects")
           return task.status !== "done" && Boolean(task.projectId);
         if (view === "review") return task.status !== "done";
@@ -2571,7 +2589,7 @@ export function GTDApp() {
               ? "done"
               : "inbox",
       context: "",
-      important: false,
+      important: view === "important",
       startDate: view === "today" ? today() : undefined,
       dueDate: view === "today" ? today() : undefined,
       estimate: 1,
@@ -2590,7 +2608,7 @@ export function GTDApp() {
     if (!title?.trim()) return;
     const estimate = Math.max(1, Math.round((new Date(`${dueDate}T12:00:00`).getTime() - new Date(`${startDate}T12:00:00`).getTime()) / DAY) + 1);
     const status: Status = view === "inbox" || view === "next" || view === "waiting" || view === "scheduled" || view === "someday" ? view : "next";
-    const task: Task = { id: uid(), title: title.trim(), notes: "", status, context: "", important: false, startDate, dueDate, estimate, sortOrder: stateRef.current.tasks.length, tagIds: [], dependencyIds: [], projectId: projectFilter };
+    const task: Task = { id: uid(), title: title.trim(), notes: "", status, context: "", important: view === "important", startDate, dueDate, estimate, sortOrder: stateRef.current.tasks.length, tagIds: [], dependencyIds: [], projectId: projectFilter };
     setState((current) => ({ ...current, tasks: [...current.tasks, task] }));
     setSelectedId(task.id);
     pushToast(`任务已安排在 ${rangeLabel}`);
@@ -2944,8 +2962,11 @@ export function GTDApp() {
               onClick={() =>
                 setTask(selected.id, { important: !selected.important })
               }
+              aria-label={selected.important ? "取消重要标记" : "标记为重要"}
+              aria-pressed={selected.important}
+              title={selected.important ? "取消重要标记" : "标记为重要"}
             >
-              ☆
+              {selected.important ? "★" : "☆"}
             </button>
             <button className="close" onClick={() => setSelectedId(undefined)} aria-label="返回任务列表">
               ×

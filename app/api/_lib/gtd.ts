@@ -86,6 +86,7 @@ export async function listTasks(userId:string, filters:{query?:string;view?:stri
   if(filters.dueTo) add("t.due_date<=?",validDate(filters.dueTo));
   const now = new Date().toISOString().slice(0,10);
   if(filters.view === "today") { values.push(now); where.push(`t.status<>'done' AND (t.start_date=$${values.length} OR t.due_date=$${values.length})`); }
+  else if(filters.view === "important") where.push("t.status<>'done' AND t.important=TRUE");
   else if(filters.view === "completed") where.push("t.status='done'");
   else if(filters.view && ["inbox","next","waiting","scheduled","someday"].includes(filters.view)) add("t.status=?",filters.view);
   if(filters.cursor) { const [order,id]=Buffer.from(filters.cursor,"base64url").toString().split(":"); values.push(Number(order),id); where.push(`(t.sort_order,t.id)>($${values.length-1},$${values.length})`); }

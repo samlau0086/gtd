@@ -1507,6 +1507,8 @@ select:focus-visible {
 }
 .notes {
   margin: 12px 16px;
+  min-width: 0;
+  overflow: hidden;
   background: #202627;
   border: 1px solid #2f3738;
   border-radius: 10px;
@@ -1517,7 +1519,9 @@ select:focus-visible {
   font-size: 11px;
 }
 .notes textarea {
+  display: block;
   width: 100%;
+  max-width: 100%;
   min-height: 120px;
   margin-top: 10px;
   border: 0;
@@ -1527,6 +1531,9 @@ select:focus-visible {
   font-size: 12px;
   line-height: 1.6;
   color: #cbd4d3;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
 }
 .detail > footer {
   margin-top: auto;
@@ -1745,6 +1752,9 @@ select:focus-visible {
   color: #71807f;
   font-size: 9px;
   margin-top: 5px;
+}
+.gantt-mobile-hint {
+  display: none !important;
 }
 .zoom {
   display: flex;
@@ -2705,6 +2715,15 @@ select:focus-visible {
       radial-gradient(circle at 88% 2%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 32%),
       var(--bg);
   }
+  .gantt-desktop-hint {
+    display: none !important;
+  }
+  .gantt-mobile-hint {
+    display: block !important;
+  }
+  .gantt-canvas {
+    touch-action: pan-x pan-y;
+  }
   .topbar {
     min-height: 150px;
     padding: max(22px, env(safe-area-inset-top)) 20px 20px;
@@ -3011,10 +3030,11 @@ select:focus-visible {
     color: var(--accent);
   }
   .sidebar nav button:nth-child(2) i { color: #c04472; }
-  .sidebar nav button:nth-child(3) i { color: #168d7d; }
-  .sidebar nav button:nth-child(4) i { color: #bf6138; }
-  .sidebar nav button:nth-child(5) i { color: #24825f; }
-  .sidebar nav button:nth-child(6) i { color: #c84a4a; }
+  .sidebar nav button:nth-child(3) i { color: #d29a32; }
+  .sidebar nav button:nth-child(4) i { color: #168d7d; }
+  .sidebar nav button:nth-child(5) i { color: #bf6138; }
+  .sidebar nav button:nth-child(6) i { color: #24825f; }
+  .sidebar nav button:nth-child(7) i { color: #c84a4a; }
   .sidebar nav button span,
   .project-link span {
     font-size: 17px;
@@ -3075,6 +3095,9 @@ select:focus-visible {
     background: var(--panel);
     overflow-y: auto;
     animation: mobile-detail-in .22s cubic-bezier(.22, 1, .36, 1);
+  }
+  .detail > * {
+    flex-shrink: 0;
   }
   @keyframes mobile-detail-in {
     from { transform: translateX(24px); opacity: .72; }

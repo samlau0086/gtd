@@ -3,16 +3,19 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 test("ships the GTD Flow product shell", async () => {
-  const [page, app, layout, packageJson] = await Promise.all([
+  const [page, app, layout, packageJson, styles] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/GTDApp.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../package.json", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
   ]);
   assert.match(page, /<GTDApp/);
   assert.match(page, /<PWAInstall/);
   assert.match(layout, /GTD Flow/);
   assert.match(app, /今天/);
+  assert.match(app, /key: "important", icon: "star", label: "重要"/);
+  assert.match(app, /task\.important \? "★" : "☆"/);
   assert.match(app, /甘特/);
   assert.match(app, /AI 智能拆分/);
   assert.match(app, /function SelectPopover/);
@@ -37,6 +40,10 @@ test("ships the GTD Flow product shell", async () => {
   assert.match(app, /beginCreateRange/);
   assert.match(app, /onDoubleClick/);
   assert.match(app, /gantt-date-tooltip/);
+  assert.match(app, /isMobileGanttViewport/);
+  assert.match(app, /gantt-mobile-hint/);
+  assert.match(styles, /\.detail > \*\s*{\s*flex-shrink: 0/);
+  assert.match(styles, /overflow-wrap: anywhere/);
   assert.match(app, /createGanttTask/);
   assert.doesNotMatch(app, /\b(?:alert|confirm|prompt)\s*\(/);
   assert.doesNotMatch(app, /<select/);
