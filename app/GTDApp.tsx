@@ -270,7 +270,7 @@ const freshSeedState = (): AppState => {
 type IconName =
   | "inbox" | "sun" | "arrow-right" | "projects" | "clock" | "calendar"
   | "sparkles" | "review" | "check" | "chevron-down" | "search" | "plus"
-  | "settings" | "menu" | "list" | "gantt" | "cloud-check" | "edit" | "trash";
+  | "settings" | "menu" | "list" | "gantt" | "cloud-check" | "edit" | "trash" | "user";
 
 const ICON_PATHS: Record<IconName, ReactNode> = {
   inbox: <><path d="M4 4h16l1.5 11.5A4 4 0 0 1 17.5 20h-11a4 4 0 0 1-4-4.5L4 4Z"/><path d="M3 14h5l1.5 2h5l1.5-2h5"/></>,
@@ -290,6 +290,7 @@ const ICON_PATHS: Record<IconName, ReactNode> = {
   list: <><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r=".5" fill="currentColor" stroke="none"/><circle cx="4.5" cy="12" r=".5" fill="currentColor" stroke="none"/><circle cx="4.5" cy="18" r=".5" fill="currentColor" stroke="none"/></>,
   gantt: <><path d="M4 6h7M4 12h13M4 18h10"/><path d="M11 4v4M17 10v4M14 16v4"/></>,
   "cloud-check": <><path d="M17.5 19H7a5 5 0 1 1 1.3-9.83A6 6 0 0 1 20 11a4 4 0 0 1-2.5 8Z"/><path d="m9 14 2 2 4-4"/></>,
+  user: <><circle cx="12" cy="8" r="3.5"/><path d="M5 20a7 7 0 0 1 14 0"/></>,
   edit: <><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/></>,
   trash: <><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"/></>,
 };
@@ -2040,6 +2041,7 @@ export function GTDApp() {
   const [aiTask, setAiTask] = useState<Task>();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTab>("general");
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [preferences, setPreferences] = useState<UserPreferences>(() => ({
     defaultView: "today",
     weekStartsOn: "monday",
@@ -2054,9 +2056,25 @@ export function GTDApp() {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const loaded = useRef(false);
   const syncing = useRef(false);
+  const accountMenuRef = useRef<HTMLDivElement>(null);
   const stateRef = useRef(state);
   const serverSnapshot = useRef<AppState>({ projects: [], tasks: [], tags: [], dataVersion: 0 });
   useEffect(() => { stateRef.current = state; }, [state]);
+  useEffect(() => {
+    if (!accountMenuOpen) return;
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      if (!accountMenuRef.current?.contains(event.target as Node)) setAccountMenuOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setAccountMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOnOutsideClick);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsideClick);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [accountMenuOpen]);
   const pushToast = useCallback((message: string, type: ToastItem["type"] = "success") => {
     const id = uid();
     setToasts((current) => [...current, { id, message, type }].slice(-4));
@@ -2583,21 +2601,51 @@ export function GTDApp() {
   return (
     <main className={`app-shell ${selected ? "detail-open" : ""} density-${preferences.density}`}>
       <aside className={`sidebar ${navOpen ? "open" : ""}`}>
-        <div className="account">
-          <div className="avatar">{email[0]?.toUpperCase() || "G"}</div>
-          <div>
-            <strong>
-              {email.split("@")[0]}
-            </strong>
-            <span>{email}</span>
+        <div className="account-area" ref={accountMenuRef}>
+          <div className="account">
+            <div className="avatar">{email[0]?.toUpperCase() || "G"}</div>
+            <div>
+              <strong>
+                {email.split("@")[0]}
+              </strong>
+              <span>{email}</span>
+            </div>
+            <button
+              className="account-trigger"
+              onClick={() => setAccountMenuOpen((open) => !open)}
+              aria-label="打开账户菜单"
+              aria-haspopup="menu"
+              aria-expanded={accountMenuOpen}
+              aria-controls="account-menu"
+              title="账户菜单"
+            >
+              <Icon name="chevron-down" size={16} />
+            </button>
           </div>
-          <button
-            onClick={signOut}
-            aria-label="退出登录"
-            title="退出登录"
-          >
-            <Icon name="chevron-down" size={16} />
-          </button>
+          {accountMenuOpen && (
+            <div className="account-menu" id="account-menu" role="menu">
+              <button role="menuitem" onClick={() => {
+                setSettingsInitialTab("account");
+                setSettingsOpen(true);
+                setAccountMenuOpen(false);
+              }}>
+                <Icon name="user" size={20} />
+                <span>账号与同步</span>
+              </button>
+              <button role="menuitem" onClick={() => {
+                setSettingsInitialTab("general");
+                setSettingsOpen(true);
+                setAccountMenuOpen(false);
+              }}>
+                <Icon name="settings" size={20} />
+                <span>设置</span>
+              </button>
+              <div className={`account-menu-status ${sync}`} role="status">
+                <Icon name="cloud-check" size={20} />
+                <span>{sync === "saving" ? "正在同步…" : sync === "error" ? "同步失败" : "已同步"}</span>
+              </div>
+            </div>
+          )}
         </div>
         <label className="search">
           <span><Icon name="search" size={16} /></span>
@@ -2670,8 +2718,9 @@ export function GTDApp() {
       </aside>
       <section className="workspace">
         <header className="topbar">
-          <button className="mobile-menu" onClick={() => setNavOpen(!navOpen)}>
+          <button className="mobile-menu" onClick={() => setNavOpen(!navOpen)} aria-label="打开列表">
             <Icon name="menu" />
+            <span>列表</span>
           </button>
           <div>
             <span className="eyebrow">GTD FLOW</span>
@@ -2815,7 +2864,7 @@ export function GTDApp() {
             >
               ☆
             </button>
-            <button className="close" onClick={() => setSelectedId(undefined)}>
+            <button className="close" onClick={() => setSelectedId(undefined)} aria-label="返回任务列表">
               ×
             </button>
           </header>
