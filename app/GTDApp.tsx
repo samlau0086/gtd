@@ -51,6 +51,20 @@ type DraftItem = {
   dueDate?: string;
   dependsOn: string[];
 };
+
+const normalizeDraftDependencies = (items: DraftItem[]) => {
+  const previous = new Set<string>();
+  return items.map((item) => {
+    const dependsOn = [...new Set(item.dependsOn)].filter((id) =>
+      previous.has(id),
+    );
+    previous.add(item.tempId);
+    return dependsOn.length === item.dependsOn.length &&
+      dependsOn.every((id, index) => id === item.dependsOn[index])
+      ? item
+      : { ...item, dependsOn };
+  });
+};
 type AuthConfig = { mode: "self-hosted"; setupRequired?: boolean };
 type ToastItem = { id: string; message: string; type: "success" | "info" | "error" };
 type McpTokenRecord = { id: string; name: string; scope: "read" | "write"; expiresAt: string | null; lastUsedAt: string | null; revokedAt: string | null; createdAt: string };
@@ -1578,7 +1592,11 @@ function AIModal({
                 </div>
                 <button
                   onClick={() =>
-                    setDraft(draft.filter((x) => x.tempId !== item.tempId))
+                    setDraft((current) =>
+                      normalizeDraftDependencies(
+                        current.filter((x) => x.tempId !== item.tempId),
+                      ),
+                    )
                   }
                 >
                   ×
@@ -1608,7 +1626,9 @@ function AIModal({
                 setBusy(true);
                 setError("");
                 try {
-                  await onCommit(draft);
+                  const normalizedDraft = normalizeDraftDependencies(draft);
+                  setDraft(normalizedDraft);
+                  await onCommit(normalizedDraft);
                 } catch (error) {
                   setError(error instanceof Error ? error.message : "创建子任务失败");
                   setBusy(false);
