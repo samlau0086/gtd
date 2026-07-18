@@ -42,7 +42,11 @@ test("ships the GTD Flow product shell", async () => {
   assert.match(app, /gantt-date-tooltip/);
   assert.match(app, /isMobileGanttViewport/);
   assert.match(app, /gantt-mobile-hint/);
-  assert.match(styles, /\.detail > \*\s*{\s*flex-shrink: 0/);
+  const desktopDetailStyles = styles.slice(
+    styles.indexOf("/* Detail panel */"),
+    styles.indexOf("@media (max-width: 1180px)"),
+  );
+  assert.match(desktopDetailStyles, /\.detail > \*\s*{\s*flex-shrink: 0/);
   assert.match(styles, /overflow-wrap: anywhere/);
   assert.match(app, /createGanttTask/);
   assert.doesNotMatch(app, /\b(?:alert|confirm|prompt)\s*\(/);

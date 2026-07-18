@@ -1306,6 +1306,9 @@ select:focus-visible {
   overflow: auto;
   z-index: 10;
 }
+.detail > * {
+  flex-shrink: 0;
+}
 .detail > header {
   display: grid;
   grid-template-columns: 28px 1fr 30px 30px;
@@ -3095,9 +3098,6 @@ select:focus-visible {
     background: var(--panel);
     overflow-y: auto;
     animation: mobile-detail-in .22s cubic-bezier(.22, 1, .36, 1);
-  }
-  .detail > * {
-    flex-shrink: 0;
   }
   @keyframes mobile-detail-in {
     from { transform: translateX(24px); opacity: .72; }
