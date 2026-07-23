@@ -121,7 +121,11 @@ const DAY = 86400000;
 const iso = (date: Date) => date.toISOString().slice(0, 10);
 const addDays = (date: string, days: number) =>
   iso(new Date(new Date(`${date}T12:00:00`).getTime() + days * DAY));
-const today = () => iso(new Date());
+const today = () => {
+  const date = new Date();
+  const part = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${part(date.getMonth() + 1)}-${part(date.getDate())}`;
+};
 const startOfWeek = (date: string, weekStartsOn: "monday" | "sunday") => {
   const day = new Date(`${date}T12:00:00`).getDay();
   const offset = weekStartsOn === "monday" ? (day + 6) % 7 : day;
@@ -2366,6 +2370,45 @@ export function GTDApp() {
     const interval = window.setInterval(() => void check(), 5000);
     return () => window.clearInterval(interval);
   }, [ready, token, pushToast]);
+  useEffect(() => {
+    const badgeNavigator = navigator as Navigator & {
+      setAppBadge?: (contents?: number) => Promise<void>;
+      clearAppBadge?: () => Promise<void>;
+    };
+    let dayChangeTimer: number | undefined;
+
+    const updateBadge = () => {
+      const dueTodayCount = ready && token
+        ? state.tasks.filter((task) => task.status !== "done" && task.dueDate === today()).length
+        : 0;
+      const request = dueTodayCount > 0
+        ? badgeNavigator.setAppBadge?.(dueTodayCount)
+        : badgeNavigator.clearAppBadge?.() ?? badgeNavigator.setAppBadge?.(0);
+      void request?.catch(() => undefined);
+    };
+    const scheduleDayChange = () => {
+      if (dayChangeTimer !== undefined) window.clearTimeout(dayChangeTimer);
+      const now = new Date();
+      const nextDay = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+      dayChangeTimer = window.setTimeout(() => {
+        updateBadge();
+        scheduleDayChange();
+      }, nextDay.getTime() - now.getTime() + 1000);
+    };
+    const updateWhenVisible = () => {
+      if (document.visibilityState === "visible") updateBadge();
+    };
+
+    updateBadge();
+    scheduleDayChange();
+    document.addEventListener("visibilitychange", updateWhenVisible);
+    window.addEventListener("focus", updateBadge);
+    return () => {
+      if (dayChangeTimer !== undefined) window.clearTimeout(dayChangeTimer);
+      document.removeEventListener("visibilitychange", updateWhenVisible);
+      window.removeEventListener("focus", updateBadge);
+    };
+  }, [ready, token, state.tasks]);
   useEffect(() => setSubtaskTitle(""), [selectedId]);
   useEffect(()=>{if(!ready)return;const taskId=new URLSearchParams(window.location.search).get("task");if(taskId&&state.tasks.some(task=>task.id===taskId))setSelectedId(taskId);},[ready,state.tasks]);
   useEffect(()=>{if(!ready||!token||!("serviceWorker" in navigator))return;void navigator.serviceWorker.ready.then(registration=>registration.pushManager.getSubscription()).then(subscription=>{if(!subscription)return;return fetch("/api/push-subscriptions",{method:"POST",headers:authHeaders(token,true),body:JSON.stringify({...subscription.toJSON(),deviceName:navigator.platform||"浏览器设备"})});}).catch(()=>undefined);},[ready,token]);

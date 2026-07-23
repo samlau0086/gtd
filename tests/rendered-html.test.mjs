@@ -77,11 +77,12 @@ test("ships project theme settings across task views", async () => {
 });
 
 test("ships an installable Chrome app experience", async () => {
-  const [manifest, installer, worker, offline] = await Promise.all([
+  const [manifest, installer, worker, offline, app] = await Promise.all([
     readFile(new URL("../app/manifest.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/PWAInstall.tsx", import.meta.url), "utf8"),
     readFile(new URL("../public/sw.js", import.meta.url), "utf8"),
     readFile(new URL("../public/offline.html", import.meta.url), "utf8"),
+    readFile(new URL("../app/GTDApp.tsx", import.meta.url), "utf8"),
   ]);
   assert.match(manifest, /display: "standalone"/);
   assert.match(manifest, /icon-192\.png/);
@@ -95,6 +96,9 @@ test("ships an installable Chrome app experience", async () => {
   assert.match(worker, /notificationclick/);
   assert.match(worker, /showNotification/);
   assert.match(offline, /重新连接/);
+  assert.match(app, /setAppBadge\?\.\(dueTodayCount\)/);
+  assert.match(app, /task\.status !== "done" && task\.dueDate === today\(\)/);
+  assert.match(app, /clearAppBadge/);
 });
 
 test("ships reliable multi-channel task reminders", async () => {
