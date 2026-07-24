@@ -118,6 +118,18 @@ function closeToTray() {
   mainWindow.setSkipTaskbar(true);
 }
 
+function trayIconForCount(count) {
+  if (count > 0) {
+    return nativeImage.createFromBuffer(createBadgePng(count)).resize({ width: 20, height: 20 });
+  }
+  return nativeImage.createFromPath(iconPath).resize({ width: 20, height: 20 });
+}
+
+function updateTrayIcon() {
+  if (!tray) return;
+  tray.setImage(trayIconForCount(badgeCount));
+}
+
 function rebuildTrayMenu() {
   if (!tray) return;
   tray.setToolTip(
@@ -175,6 +187,7 @@ function updateBadge() {
   } else {
     app.setBadgeCount(nextCount);
   }
+  updateTrayIcon();
   rebuildTrayMenu();
 }
 
@@ -253,7 +266,7 @@ function createWindow() {
 }
 
 function createTray() {
-  tray = new Tray(nativeImage.createFromPath(iconPath).resize({ width: 20, height: 20 }));
+  tray = new Tray(trayIconForCount(badgeCount));
   tray.on("click", showWindow);
   rebuildTrayMenu();
 }

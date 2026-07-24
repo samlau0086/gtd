@@ -1,6 +1,6 @@
 {
   "name": "gtd-flow-desktop",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Native Windows client for GTD Flow",
   "author": "GTD Flow",
   "private": true,

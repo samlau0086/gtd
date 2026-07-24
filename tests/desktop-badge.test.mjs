@@ -37,6 +37,9 @@ test("desktop client stays resident and exposes only the narrow task bridge", as
   assert.match(main, /mainWindow\.setSkipTaskbar\(false\)/);
   assert.doesNotMatch(main, /mainWindow\.minimize\(\)/);
   assert.match(main, /setOverlayIcon/);
+  assert.match(main, /function trayIconForCount\(count\)/);
+  assert.match(main, /tray\.setImage\(trayIconForCount\(badgeCount\)\)/);
+  assert.match(main, /new Tray\(trayIconForCount\(badgeCount\)\)/);
   assert.match(main, /setLoginItemSettings/);
   assert.match(main, /scheduleDayChange/);
   assert.match(main, /powerMonitor\.on\("resume"/);
