@@ -106,18 +106,16 @@ function autoStartEnabled() {
 
 function showWindow() {
   if (!mainWindow) return;
+  mainWindow.setSkipTaskbar(false);
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show();
   mainWindow.focus();
 }
 
-function minimizeToTaskbar() {
+function closeToTray() {
   if (!mainWindow) return;
-  if (!mainWindow.isVisible()) mainWindow.showInactive();
-  mainWindow.minimize();
-  // Windows may recreate the taskbar button when a hidden window becomes visible.
-  badgeCount = -1;
-  updateBadge();
+  mainWindow.hide();
+  mainWindow.setSkipTaskbar(true);
 }
 
 function rebuildTrayMenu() {
@@ -240,13 +238,13 @@ function createWindow() {
     reloadTimer = setTimeout(() => void mainWindow?.loadURL(serverUrl), 30000);
   });
   mainWindow.once("ready-to-show", () => {
-    if (backgroundStart && serverUrl) minimizeToTaskbar();
+    if (backgroundStart && serverUrl) closeToTray();
     else showWindow();
   });
   mainWindow.on("close", (event) => {
     if (isQuitting) return;
     event.preventDefault();
-    minimizeToTaskbar();
+    closeToTray();
   });
   mainWindow.on("closed", () => {
     mainWindow = undefined;
