@@ -194,6 +194,22 @@ test("ships guarded GitHub Actions deployment to VPS", async () => {
   assert.match(compose, /APP_IMAGE/);
 });
 
+test("publishes tagged Windows desktop releases with checksums", async () => {
+  const workflow = await readFile(
+    new URL("../.github/workflows/release-desktop.yml", import.meta.url),
+    "utf8",
+  );
+  assert.match(workflow, /tags:\s*\n\s*- "v\*\.\*\.\*"/);
+  assert.match(workflow, /contents: write/);
+  assert.match(workflow, /runs-on: windows-latest/);
+  assert.match(workflow, /npm test/);
+  assert.match(workflow, /npm run desktop:dist/);
+  assert.match(workflow, /Get-FileHash -Algorithm SHA256/);
+  assert.match(workflow, /gh release create/);
+  assert.match(workflow, /gh release upload/);
+  assert.match(workflow, /--verify-tag/);
+});
+
 test("supports encrypted SMTP and Resend email providers", async () => {
   const [app, mail, config, migration] = await Promise.all([
     readFile(new URL("../app/GTDApp.tsx", import.meta.url), "utf8"),

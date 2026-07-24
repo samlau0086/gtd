@@ -20,6 +20,15 @@ npm run desktop:dist
 
 安装程序输出到 `release/GTD-Flow-Setup-*.exe`，会创建桌面与开始菜单快捷方式。安装后客户端默认启用开机后台启动，可在托盘菜单关闭。任务栏数字只统计“截止日期为今天且尚未完成”的任务；超过 99 项时图标显示 `99`，托盘菜单仍显示真实数量。
 
+发布新版本时，同时更新根目录与 `desktop/package.json` 的版本并推送对应标签：
+
+```powershell
+git tag v0.1.1
+git push origin v0.1.1
+```
+
+`Release Windows Desktop` 工作流会在 Windows runner 上运行完整测试、构建安装程序、生成 `SHA256SUMS.txt`，并自动创建 GitHub Release。工作流也可针对已经存在的标签手动重跑；它不会创建标签，且标签版本与两个 `package.json` 不一致时会拒绝发布。
+
 ## 任务提醒
 
 任务可设置一个 Todo 风格的提醒时间，并同时发送到 Email、签名 Webhook、Bark 和已授权的 PWA 系统通知。提醒由独立 `reminder-worker` 容器处理，即使浏览器没有打开也会发送。
