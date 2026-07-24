@@ -1,6 +1,8 @@
 {
   "name": "gtd-flow",
   "version": "0.1.0",
+  "description": "GTD Flow self-hosted task manager and native desktop client",
+  "author": "GTD Flow",
   "private": true,
   "engines": {
     "node": ">=22.13.0"
@@ -10,7 +12,11 @@
     "build": "next build && npm run build:worker",
     "build:worker": "esbuild worker/reminders.ts --bundle --platform=node --format=esm --outfile=dist-worker/reminders.mjs",
     "start": "next start",
-    "test": "npm run build && node --test tests/rendered-html.test.mjs",
+    "test": "npm run build && npm run test:unit",
+    "test:unit": "node --test tests/rendered-html.test.mjs tests/desktop-badge.test.mjs",
+    "desktop:dev": "electron desktop",
+    "desktop:pack": "electron-builder --projectDir desktop --dir --win",
+    "desktop:dist": "electron-builder --projectDir desktop --win nsis",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node scripts/migrate.mjs"
@@ -36,6 +42,8 @@
     "@types/react-dom": "19.2.3",
     "@types/web-push": "^3.6.4",
     "drizzle-kit": "0.31.10",
+    "electron": "^43.2.0",
+    "electron-builder": "^26.15.3",
     "esbuild": "^0.28.1",
     "eslint": "9.39.4",
     "eslint-config-next": "16.2.6",

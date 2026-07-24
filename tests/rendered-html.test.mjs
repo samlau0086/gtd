@@ -97,8 +97,9 @@ test("ships an installable Chrome app experience", async () => {
   assert.match(worker, /showNotification/);
   assert.match(offline, /重新连接/);
   assert.match(app, /setAppBadge\?\.\(dueTodayCount\)/);
-  assert.match(app, /task\.status !== "done" && task\.dueDate === today\(\)/);
+  assert.match(app, /activeTasks\.filter\(\(task\) => task\.status !== "done" && task\.dueDate === today\(\)\)/);
   assert.match(app, /clearAppBadge/);
+  assert.match(app, /window\.gtdDesktop\?\.syncTasks\(activeTasks\)/);
 });
 
 test("ships reliable multi-channel task reminders", async () => {

@@ -85,6 +85,13 @@ type UserPreferences = {
   weekStartsOn: "monday" | "sunday";
   density: "comfortable" | "compact";
 };
+declare global {
+  interface Window {
+    gtdDesktop?: {
+      syncTasks: (tasks: Pick<Task, "dueDate" | "status">[]) => void;
+    };
+  }
+}
 type ViewKey =
   | "inbox"
   | "today"
@@ -2378,8 +2385,12 @@ export function GTDApp() {
     let dayChangeTimer: number | undefined;
 
     const updateBadge = () => {
+      const activeTasks = ready && token
+        ? state.tasks.map(({ dueDate, status }) => ({ dueDate, status }))
+        : [];
+      window.gtdDesktop?.syncTasks(activeTasks);
       const dueTodayCount = ready && token
-        ? state.tasks.filter((task) => task.status !== "done" && task.dueDate === today()).length
+        ? activeTasks.filter((task) => task.status !== "done" && task.dueDate === today()).length
         : 0;
       const request = dueTodayCount > 0
         ? badgeNavigator.setAppBadge?.(dueTodayCount)

@@ -1,5 +1,25 @@
 # GTD Flow — VPS + PostgreSQL
 
+## Windows 桌面客户端
+
+桌面客户端复用已部署的 GTD Flow 服务，提供 Windows 原生任务栏数字、系统托盘常驻和开机自动启动。关闭窗口只会隐藏到托盘；需要完全结束时，从托盘菜单选择“退出”。
+
+开发运行：
+
+```powershell
+npm run desktop:dev
+```
+
+首次启动时输入 GTD Flow 服务地址，例如 `https://gtd.example.com`，然后在桌面窗口内正常登录。也可以通过 `GTD_FLOW_DESKTOP_URL` 环境变量预设地址。
+
+生成 Windows 安装程序：
+
+```powershell
+npm run desktop:dist
+```
+
+安装程序输出到 `release/GTD-Flow-Setup-*.exe`，会创建桌面与开始菜单快捷方式。安装后客户端默认启用开机后台启动，可在托盘菜单关闭。任务栏数字只统计“截止日期为今天且尚未完成”的任务；超过 99 项时图标显示 `99`，托盘菜单仍显示真实数量。
+
 ## 任务提醒
 
 任务可设置一个 Todo 风格的提醒时间，并同时发送到 Email、签名 Webhook、Bark 和已授权的 PWA 系统通知。提醒由独立 `reminder-worker` 容器处理，即使浏览器没有打开也会发送。

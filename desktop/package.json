@@ -1,0 +1,49 @@
+{
+  "name": "gtd-flow-desktop",
+  "version": "0.1.0",
+  "description": "Native Windows client for GTD Flow",
+  "author": "GTD Flow",
+  "private": true,
+  "type": "module",
+  "main": "main.mjs",
+  "build": {
+    "appId": "com.gtdflow.desktop",
+    "productName": "GTD Flow",
+    "artifactName": "GTD-Flow-Setup-${version}.${ext}",
+    "asar": true,
+    "electronVersion": "43.2.0",
+    "electronDist": "../node_modules/electron/dist",
+    "directories": {
+      "output": "../release",
+      "buildResources": "../build"
+    },
+    "files": [
+      "**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "../public/icon-512.png",
+        "to": "icon-512.png"
+      }
+    ],
+    "win": {
+      "icon": "../public/icon-512.png",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "shortcutName": "GTD Flow",
+      "runAfterFinish": true
+    }
+  }
+}
