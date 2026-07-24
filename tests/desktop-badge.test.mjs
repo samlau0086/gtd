@@ -31,7 +31,10 @@ test("desktop client stays resident and exposes only the narrow task bridge", as
     readFile(new URL("../desktop/preload.cjs", import.meta.url), "utf8"),
     readFile(new URL("../desktop/package.json", import.meta.url), "utf8"),
   ]);
-  assert.match(main, /mainWindow\?\.hide\(\)/);
+  assert.match(main, /function minimizeToTaskbar\(\)/);
+  assert.match(main, /mainWindow\.showInactive\(\)/);
+  assert.match(main, /mainWindow\.minimize\(\)/);
+  assert.doesNotMatch(main, /mainWindow\?\.hide\(\)/);
   assert.match(main, /setOverlayIcon/);
   assert.match(main, /setLoginItemSettings/);
   assert.match(main, /scheduleDayChange/);

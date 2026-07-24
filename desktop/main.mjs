@@ -111,6 +111,15 @@ function showWindow() {
   mainWindow.focus();
 }
 
+function minimizeToTaskbar() {
+  if (!mainWindow) return;
+  if (!mainWindow.isVisible()) mainWindow.showInactive();
+  mainWindow.minimize();
+  // Windows may recreate the taskbar button when a hidden window becomes visible.
+  badgeCount = -1;
+  updateBadge();
+}
+
 function rebuildTrayMenu() {
   if (!tray) return;
   tray.setToolTip(
@@ -231,12 +240,13 @@ function createWindow() {
     reloadTimer = setTimeout(() => void mainWindow?.loadURL(serverUrl), 30000);
   });
   mainWindow.once("ready-to-show", () => {
-    if (!backgroundStart || !serverUrl) showWindow();
+    if (backgroundStart && serverUrl) minimizeToTaskbar();
+    else showWindow();
   });
   mainWindow.on("close", (event) => {
     if (isQuitting) return;
     event.preventDefault();
-    mainWindow?.hide();
+    minimizeToTaskbar();
   });
   mainWindow.on("closed", () => {
     mainWindow = undefined;
@@ -258,7 +268,7 @@ else {
     isQuitting = true;
   });
   app.on("window-all-closed", () => {
-    // 托盘进程需要保持运行，任务栏徽标才能在窗口关闭后继续更新。
+    // 托盘进程需要保持运行，任务栏徽标才能持续更新。
   });
 
   app.whenReady().then(() => {
