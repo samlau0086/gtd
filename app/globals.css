@@ -233,11 +233,11 @@ select:focus-visible {
 .app-shell {
   height: 100vh;
   display: grid;
-  grid-template-columns: 272px minmax(520px, 1fr);
+  grid-template-columns: 236px minmax(520px, 1fr);
   background: var(--bg);
 }
 .app-shell.detail-open {
-  grid-template-columns: 272px minmax(520px, 1fr) 390px;
+  grid-template-columns: 236px minmax(520px, 1fr) 360px;
 }
 .sidebar {
   min-width: 0;
@@ -245,22 +245,22 @@ select:focus-visible {
   border-right: 1px solid #283030;
   display: flex;
   flex-direction: column;
-  padding: 18px 12px 14px;
+  padding: 10px 8px 10px;
   z-index: 20;
 }
 .account {
   display: grid;
-  grid-template-columns: 42px 1fr 28px;
-  gap: 11px;
+  grid-template-columns: 36px 1fr 28px;
+  gap: 9px;
   align-items: center;
-  padding: 8px 8px 18px;
+  padding: 6px 8px 11px;
 }
 .account-area {
   position: relative;
 }
 .avatar {
-  width: 42px;
-  height: 42px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   display: grid;
   place-items: center;
@@ -278,12 +278,12 @@ select:focus-visible {
   text-overflow: ellipsis;
 }
 .account strong {
-  font-size: 14px;
+  font-size: 12px;
 }
 .account span {
   color: var(--muted);
-  font-size: 11px;
-  margin-top: 4px;
+  font-size: 9px;
+  margin-top: 2px;
 }
 .account-trigger {
   background: none;
@@ -392,11 +392,11 @@ select:focus-visible {
   border: 1px solid #303939;
   border-radius: 9px;
   padding: 0 10px;
-  margin: 0 6px 14px;
+  margin: 0 4px 8px;
   color: var(--muted);
 }
 .search input {
-  height: 40px;
+  height: 34px;
   border: 0;
   background: transparent;
   min-width: 0;
@@ -418,13 +418,13 @@ select:focus-visible {
 }
 .sidebar nav button,
 .project-link {
-  height: 38px;
-  border-radius: 7px;
+  height: 34px;
+  border-radius: 5px;
   background: transparent;
   display: grid;
   grid-template-columns: 30px 1fr auto;
   align-items: center;
-  padding: 0 10px;
+  padding: 0 8px;
   text-align: left;
   color: #c9d1d0;
 }
@@ -457,7 +457,7 @@ select:focus-visible {
 }
 .sidebar nav button span,
 .project-link span {
-  font-size: 13px;
+  font-size: 12px;
 }
 .sidebar nav button b,
 .project-link b {
@@ -474,14 +474,14 @@ select:focus-visible {
 }
 .projects {
   border-top: 1px solid var(--line);
-  margin-top: 12px;
-  padding-top: 12px;
+  margin-top: 8px;
+  padding-top: 8px;
 }
 .projects-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 10px 8px;
+  padding: 0 8px 5px;
   color: #73807f;
   font-size: 10px;
   font-weight: 800;
@@ -508,7 +508,7 @@ select:focus-visible {
 }
 .project-item {
   position: relative;
-  height: 38px;
+  height: 34px;
   border-radius: 7px;
 }
 .project-link {
@@ -522,7 +522,7 @@ select:focus-visible {
 .project-actions {
   position: absolute;
   right: 6px;
-  top: 5px;
+  top: 3px;
   display: flex;
   gap: 2px;
   padding-left: 14px;
@@ -572,7 +572,7 @@ select:focus-visible {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px 10px 0;
+  padding: 8px 8px 0;
   border-top: 1px solid var(--line);
 }
 .sync {
@@ -1013,12 +1013,13 @@ select:focus-visible {
   font-size: 9px;
 }
 .density-compact .task-row {
-  min-height: 52px;
+  min-height: 44px;
 }
 .density-compact .sidebar nav button,
 .density-compact .project-item,
 .density-compact .project-link {
-  min-height: 34px;
+  min-height: 30px;
+  height: 30px;
 }
 @keyframes settings-slide {
   from { transform: translateX(32px); opacity: 0.6; }
@@ -1036,18 +1037,19 @@ select:focus-visible {
   display: flex;
   flex-direction: column;
   background:
-    radial-gradient(circle at 80% 0, #1a2726 0, transparent 28%), #121617;
+    radial-gradient(circle at 78% -8%, #20312f 0, transparent 34%), #121617;
 }
 .topbar {
-  padding: 34px 150px 22px 40px;
+  min-height: 96px;
+  padding: 22px 28px 14px;
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
   gap: 20px;
 }
 .topbar h1 {
-  margin: 7px 0 5px;
-  font-size: 31px;
+  margin: 5px 0 4px;
+  font-size: 26px;
   line-height: 1;
   letter-spacing: -0.035em;
 }
@@ -1072,7 +1074,7 @@ select:focus-visible {
 .view-switch button {
   background: transparent;
   color: var(--muted);
-  padding: 8px 13px;
+  padding: 6px 10px;
   border-radius: 6px;
   font-size: 11px;
   display: inline-flex;
@@ -1085,8 +1087,8 @@ select:focus-visible {
   box-shadow: 0 2px 12px #0004;
 }
 .review-banner {
-  margin: 0 40px 18px;
-  padding: 18px 20px;
+  margin: 0 28px 12px;
+  padding: 14px 16px;
   background: linear-gradient(120deg, #183c3a, #202627);
   border: 1px solid #2c5551;
   border-radius: 12px;
@@ -1123,14 +1125,14 @@ select:focus-visible {
   flex: 1;
   display: flex;
   flex-direction: column;
-  padding: 0 40px 28px;
+  padding: 0 28px 18px;
 }
 .list-head {
   display: flex;
   justify-content: space-between;
   align-items: center;
   border-bottom: 1px solid var(--line);
-  height: 36px;
+  height: 30px;
   color: #71807f;
   font-size: 10px;
 }
@@ -1142,26 +1144,26 @@ select:focus-visible {
 .task-list {
   min-height: 0;
   overflow: auto;
-  padding: 7px 0 90px;
+  padding: 4px 0 70px;
 }
 .task-swipe-delete {
   display: none;
 }
 .task-row {
-  min-height: 68px;
+  min-height: 52px;
   display: grid;
-  grid-template-columns: 38px 1fr 36px;
+  grid-template-columns: 34px 1fr 32px;
   align-items: center;
   background: #1c2223;
-  border: 1px solid transparent;
-  border-radius: 10px;
-  margin: 5px 0;
-  padding: 6px 10px;
+  border: 1px solid #293031;
+  border-radius: 5px;
+  margin: 3px 0;
+  padding: 4px 9px;
   transition: 0.15s ease;
 }
 .task-row:hover {
   background: #242b2c;
-  transform: translateY(-1px);
+  border-color: #3a4544;
 }
 .task-row.active {
   background: #293031;
@@ -1179,8 +1181,8 @@ select:focus-visible {
 .task-row.project-themed .check { border-color: var(--project-border); color: var(--project-background); }
 .task-row.project-themed .check.checked { background: var(--project-border); border-color: var(--project-border); }
 .check {
-  width: 22px;
-  height: 22px;
+  width: 19px;
+  height: 19px;
   border: 2px solid #8c9998;
   border-radius: 50%;
   background: transparent;
@@ -1198,7 +1200,7 @@ select:focus-visible {
 }
 .task-copy strong {
   display: block;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
@@ -1211,7 +1213,7 @@ select:focus-visible {
 .task-meta {
   display: flex;
   gap: 11px;
-  margin-top: 8px;
+  margin-top: 4px;
   color: #778483;
   font-size: 10px;
 }
@@ -1232,7 +1234,7 @@ select:focus-visible {
 .star {
   background: none;
   color: #7c8887;
-  font-size: 25px;
+  font-size: 22px;
   line-height: 1;
 }
 .star.on {
@@ -1240,23 +1242,23 @@ select:focus-visible {
 }
 .quick-add {
   position: absolute;
-  bottom: 22px;
-  left: 312px;
-  right: 40px;
-  max-width: calc(100vw - 624px);
-  height: 58px;
+  bottom: 18px;
+  left: 264px;
+  right: 28px;
+  max-width: none;
+  height: 48px;
   background: #283030;
   border: 1px solid #374141;
-  border-radius: 10px;
+  border-radius: 5px;
   box-shadow: 0 18px 50px #0009;
   display: grid;
   grid-template-columns: 34px 1fr auto;
   align-items: center;
-  padding: 0 16px;
+  padding: 0 12px;
   color: var(--accent);
 }
 .detail-open .quick-add {
-  right: 430px;
+  right: 388px;
 }
 .quick-add input {
   background: transparent;
@@ -1271,26 +1273,26 @@ select:focus-visible {
   font-size: 11px;
 }
 .empty {
-  height: 280px;
+  height: 210px;
   display: grid;
   place-content: center;
   justify-items: center;
   color: #677372;
 }
 .empty span {
-  width: 46px;
-  height: 46px;
+  width: 38px;
+  height: 38px;
   border-radius: 50%;
   border: 1px solid #34403f;
   display: grid;
   place-items: center;
   color: var(--accent);
-  font-size: 22px;
+  font-size: 18px;
 }
 .empty strong {
   color: #aab5b4;
-  margin-top: 14px;
-  font-size: 14px;
+  margin-top: 11px;
+  font-size: 13px;
 }
 .empty p {
   font-size: 11px;
@@ -2358,13 +2360,13 @@ select:focus-visible {
 
 @media (max-width: 1180px) {
   .app-shell.detail-open {
-    grid-template-columns: 248px minmax(460px, 1fr) 350px;
+    grid-template-columns: 224px minmax(460px, 1fr) 340px;
   }
   .app-shell {
-    grid-template-columns: 248px minmax(460px, 1fr);
+    grid-template-columns: 224px minmax(460px, 1fr);
   }
   .quick-add {
-    left: 288px;
+    left: 252px;
   }
   .detail-open .quick-add {
     display: none;
@@ -2381,7 +2383,7 @@ select:focus-visible {
 }
 @media (min-width: 721px) and (max-width: 1180px) {
   .topbar {
-    padding-right: 150px;
+    padding-right: 76px;
   }
 }
 @media (max-width: 900px) {

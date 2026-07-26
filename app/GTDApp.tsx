@@ -2158,7 +2158,7 @@ export function GTDApp() {
   const [preferences, setPreferences] = useState<UserPreferences>(() => ({
     defaultView: "today",
     weekStartsOn: "monday",
-    density: "comfortable",
+    density: "compact",
   }));
   const [navOpen, setNavOpen] = useState(false);
   const [sync, setSync] = useState<"saved" | "saving" | "error">("saved");
