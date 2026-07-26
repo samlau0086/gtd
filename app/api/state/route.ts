@@ -1,10 +1,11 @@
 import { withTransaction } from "../../../db/binding";
 import { authError, requireUser } from "../_lib/auth";
 import { bumpDataVersion, getDataVersion, getState } from "../_lib/gtd";
+import { normalizeRecurrence, type RecurrenceRule } from "../../recurrence";
 
 type ProjectInput = { id: string; name: string; color: string };
 type TagInput = { id: string; name: string };
-type TaskInput = { id: string; projectId?: string; parentTaskId?: string; title: string; notes?: string; status: string; context?: string; important?: boolean; startDate?: string; dueDate?: string; estimate?: number; sortOrder?: number; tagIds?: string[]; dependencyIds?: string[] };
+type TaskInput = { id: string; projectId?: string; parentTaskId?: string; title: string; notes?: string; status: string; context?: string; important?: boolean; startDate?: string; dueDate?: string; recurrence?:RecurrenceRule; recurrenceSourceId?:string; estimate?: number; sortOrder?: number; tagIds?: string[]; dependencyIds?: string[] };
 const safeDate = (value?: string) => value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
 
 export async function GET(request: Request) {
@@ -45,7 +46,7 @@ export async function PUT(request: Request) {
       await client.query("DELETE FROM tags WHERE user_id=$1", [user.id]);
       for (const project of projects) await client.query("INSERT INTO projects (id,user_id,name,color,created_at) VALUES ($1,$2,$3,$4,NOW())", [project.id,user.id,project.name.slice(0,80),project.color || "#69d2c8"]);
       for (const tag of tags) await client.query("INSERT INTO tags (id,user_id,name) VALUES ($1,$2,$3)", [tag.id,user.id,tag.name.slice(0,40)]);
-      for (const [index, task] of tasks.entries()) await client.query(`INSERT INTO tasks (id,user_id,project_id,parent_task_id,title,notes,status,context,important,start_date,due_date,estimate,sort_order,created_at,updated_at) VALUES ($1,$2,$3,NULL,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW(),NOW())`, [task.id,user.id,task.projectId || null,task.title.trim().slice(0,240),(task.notes || "").slice(0,10000),task.status || "next",(task.context || "").slice(0,80),Boolean(task.important),safeDate(task.startDate),safeDate(task.dueDate),Math.max(1,Math.min(365,task.estimate || 1)),task.sortOrder ?? index]);
+      for (const [index, task] of tasks.entries()) await client.query(`INSERT INTO tasks (id,user_id,project_id,parent_task_id,title,notes,status,context,important,start_date,due_date,recurrence,recurrence_source_id,estimate,sort_order,created_at,updated_at) VALUES ($1,$2,$3,NULL,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NOW(),NOW())`, [task.id,user.id,task.projectId || null,task.title.trim().slice(0,240),(task.notes || "").slice(0,10000),task.status || "next",(task.context || "").slice(0,80),Boolean(task.important),safeDate(task.startDate),safeDate(task.dueDate),normalizeRecurrence(task.recurrence,task.dueDate||task.startDate)||null,task.recurrenceSourceId||null,Math.max(1,Math.min(365,task.estimate || 1)),task.sortOrder ?? index]);
       for (const task of tasks) if (task.parentTaskId && known.has(task.parentTaskId)) await client.query("UPDATE tasks SET parent_task_id=$1 WHERE id=$2 AND user_id=$3",[task.parentTaskId,task.id,user.id]);
       for (const task of tasks) for (const tagId of (task.tagIds ?? []).filter((id) => tags.some((tag) => tag.id === id))) await client.query("INSERT INTO task_tags (task_id,tag_id) VALUES ($1,$2)", [task.id,tagId]);
       for (const task of tasks) for (const dependencyId of (task.dependencyIds ?? []).filter((id) => known.has(id) && id !== task.id)) await client.query("INSERT INTO task_dependencies (task_id,depends_on_task_id,user_id) VALUES ($1,$2,$3)", [task.id,dependencyId,user.id]);

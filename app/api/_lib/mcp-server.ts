@@ -5,7 +5,11 @@ import { auditMcp, consumeDeleteConfirmation, createDeleteConfirmation, McpPrinc
 import { createProject, createTag, createTask, deleteResource, getDeleteImpact, getState, getTask, GtdError, listProjects, listTags, listTasks, reorderTasks, updateProject, updateTag, updateTask } from "./gtd";
 
 const statusSchema=z.enum(["inbox","next","waiting","scheduled","someday","done"]);
-const taskPatchSchema=z.object({projectId:z.string().optional().nullable(),parentTaskId:z.string().optional().nullable(),title:z.string().min(1).max(240).optional(),notes:z.string().max(10000).optional(),status:statusSchema.optional(),context:z.string().max(80).optional(),important:z.boolean().optional(),startDate:z.string().optional().nullable(),dueDate:z.string().optional().nullable(),estimate:z.number().int().min(1).max(365).optional(),sortOrder:z.number().int().optional(),tagIds:z.array(z.string()).optional(),dependencyIds:z.array(z.string()).optional()});
+const recurrenceSchema=z.union([
+  z.object({type:z.enum(["daily","weekdays","weekly","monthly","yearly"]),anchorDay:z.number().int().min(1).max(31).optional(),anchorMonth:z.number().int().min(1).max(12).optional()}),
+  z.object({type:z.literal("custom"),interval:z.number().int().min(1).max(999),unit:z.enum(["day","week","month","year"]),anchorDay:z.number().int().min(1).max(31).optional(),anchorMonth:z.number().int().min(1).max(12).optional()}),
+]);
+const taskPatchSchema=z.object({projectId:z.string().optional().nullable(),parentTaskId:z.string().optional().nullable(),title:z.string().min(1).max(240).optional(),notes:z.string().max(10000).optional(),status:statusSchema.optional(),context:z.string().max(80).optional(),important:z.boolean().optional(),startDate:z.string().optional().nullable(),dueDate:z.string().optional().nullable(),recurrence:recurrenceSchema.optional().nullable(),estimate:z.number().int().min(1).max(365).optional(),sortOrder:z.number().int().optional(),tagIds:z.array(z.string()).optional(),dependencyIds:z.array(z.string()).optional()});
 const result=(value:unknown,summary:string)=>({content:[{type:"text" as const,text:summary}],structuredContent:value as Record<string,unknown>});
 const failure=(error:unknown)=>({content:[{type:"text" as const,text:error instanceof Error?error.message:"操作失败"}],structuredContent:error instanceof GtdError?{error:error.message,status:error.status,details:error.details}:undefined,isError:true});
 

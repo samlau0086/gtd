@@ -1498,6 +1498,35 @@ select:focus-visible {
   text-align: right;
   color: #d7dfde;
 }
+.detail-section select {
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  outline: 0;
+  color: #d7dfde;
+  text-align: right;
+  color-scheme: dark;
+}
+.recurrence-section select {
+  justify-self: end;
+}
+.recurrence-custom {
+  gap: 8px;
+  color: #8d9998;
+}
+.recurrence-custom > span {
+  white-space: nowrap;
+}
+.recurrence-custom input {
+  width: 54px !important;
+  height: 30px;
+  padding: 0 5px;
+  border: 1px solid #36403f;
+  border-radius: 6px;
+}
+.recurrence-custom select {
+  width: 52px;
+}
 .detail-section label > div {
   display: flex;
   align-items: center;

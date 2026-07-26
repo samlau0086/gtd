@@ -13,6 +13,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import type { RecurrenceRule, RecurrenceUnit } from "./recurrence";
 
 type Status = "inbox" | "next" | "waiting" | "scheduled" | "someday" | "done";
 type Project = { id: string; name: string; color: string; backgroundColor?: string; textColor?: string; borderColor?: string; revision?: number; updatedAt?: string };
@@ -29,6 +30,8 @@ type Task = {
   important: boolean;
   startDate?: string;
   dueDate?: string;
+  recurrence?: RecurrenceRule;
+  recurrenceSourceId?: string;
   estimate: number;
   sortOrder: number;
   tagIds: string[];
@@ -149,8 +152,37 @@ const formatDate = (value?: string) =>
 const projectPayload = ({ id: _id, revision: _revision, updatedAt: _updatedAt, ...project }: Project) => project;
 const tagPayload = ({ id: _id, revision: _revision, updatedAt: _updatedAt, ...tag }: Tag) => tag;
 const taskPayload = ({ id: _id, revision: _revision, updatedAt: _updatedAt, reminder: _reminder, ...task }: Task) => task;
-const taskMutationPayload = (task: Task) => ({ ...taskPayload(task), projectId: task.projectId || null, parentTaskId: task.parentTaskId || null, startDate: task.startDate || null, dueDate: task.dueDate || null });
+const taskMutationPayload = (task: Task) => ({ ...taskPayload(task), projectId: task.projectId || null, parentTaskId: task.parentTaskId || null, startDate: task.startDate || null, dueDate: task.dueDate || null, recurrence: task.recurrence || null });
 const sameEntity = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right);
+
+const recurrenceLabel = (rule?: RecurrenceRule) => {
+  if (!rule) return "不重复";
+  if (rule.type === "daily") return "每天";
+  if (rule.type === "weekdays") return "工作日";
+  if (rule.type === "weekly") return "每周";
+  if (rule.type === "monthly") return "每月";
+  if (rule.type === "yearly") return "每年";
+  const units: Record<RecurrenceUnit, string> = { day: "天", week: "周", month: "月", year: "年" };
+  return `每隔 ${rule.interval} ${units[rule.unit]}`;
+};
+
+const recurrenceFromSelection = (
+  type: string,
+  anchorDate: string,
+): RecurrenceRule | undefined => {
+  if (!type) return undefined;
+  const [, month, day] = anchorDate.split("-").map(Number);
+  const anchor = { anchorDay: day, anchorMonth: month };
+  return type === "custom"
+    ? { type: "custom", interval: 1, unit: "day", ...anchor }
+    : { type: type as "daily" | "weekdays" | "weekly" | "monthly" | "yearly", ...anchor };
+};
+
+const reanchorRecurrence = (rule: RecurrenceRule | undefined, date: string) => {
+  if (!rule || !date) return rule;
+  const [, anchorMonth, anchorDay] = date.split("-").map(Number);
+  return { ...rule, anchorDay, anchorMonth };
+};
 
 const seedState = (): AppState => {
   const now = today();
@@ -610,6 +642,7 @@ function TaskRow({
               □ {formatDate(task.dueDate)}
             </span>
           )}
+          {task.recurrence && <span title={recurrenceLabel(task.recurrence)}>↻ {recurrenceLabel(task.recurrence)}</span>}
           {task.context && <span>@{task.context}</span>}
           {stepProgress && stepProgress.total > 0 && (
             <span className="step-progress-meta">
@@ -3218,6 +3251,9 @@ export function GTDApp() {
                 onChange={(e) =>
                   setTask(selected.id, {
                     startDate: e.target.value || undefined,
+                    recurrence: selected.dueDate
+                      ? selected.recurrence
+                      : reanchorRecurrence(selected.recurrence, e.target.value),
                   })
                 }
               />
@@ -3228,7 +3264,10 @@ export function GTDApp() {
                 type="date"
                 value={selected.dueDate || ""}
                 onChange={(e) =>
-                  setTask(selected.id, { dueDate: e.target.value || undefined })
+                  setTask(selected.id, {
+                    dueDate: e.target.value || undefined,
+                    recurrence: reanchorRecurrence(selected.recurrence, e.target.value),
+                  })
                 }
               />
             </label>
@@ -3249,6 +3288,72 @@ export function GTDApp() {
                 <em>天</em>
               </div>
             </label>
+          </section>
+          <section className="detail-section recurrence-section">
+            <label>
+              <span>重复</span>
+              <SelectPopover
+                ariaLabel="选择重复规则"
+                value={selected.recurrence?.type || ""}
+                options={[
+                  { value: "", label: "不重复", icon: "—" },
+                  { value: "daily", label: "每天", icon: "↻" },
+                  { value: "weekdays", label: "工作日", icon: "↻" },
+                  { value: "weekly", label: "每周", icon: "↻" },
+                  { value: "monthly", label: "每月", icon: "↻" },
+                  { value: "yearly", label: "每年", icon: "↻" },
+                  { value: "custom", label: "自定义", icon: "⚙" },
+                ]}
+                onChange={(value) => {
+                  const anchorDate = selected.dueDate || selected.startDate || today();
+                  setTask(selected.id, {
+                    recurrence: recurrenceFromSelection(value, anchorDate),
+                    dueDate: value && !selected.dueDate ? anchorDate : selected.dueDate,
+                  });
+                }}
+              />
+            </label>
+            {selected.recurrence?.type === "custom" && (
+              <label>
+                <span>间隔</span>
+                <div className="recurrence-custom">
+                  <span>每隔</span>
+                  <input
+                    aria-label="重复间隔"
+                    type="number"
+                    min={1}
+                    max={999}
+                    value={selected.recurrence.interval}
+                    onChange={(event) =>
+                      setTask(selected.id, {
+                        recurrence: {
+                          ...selected.recurrence as Extract<RecurrenceRule, { type: "custom" }>,
+                          interval: Math.max(1, Math.min(999, Number(event.target.value) || 1)),
+                        },
+                      })
+                    }
+                  />
+                  <SelectPopover
+                    ariaLabel="重复间隔单位"
+                    value={selected.recurrence.unit}
+                    options={[
+                      { value: "day", label: "天" },
+                      { value: "week", label: "周" },
+                      { value: "month", label: "月" },
+                      { value: "year", label: "年" },
+                    ]}
+                    onChange={(value) =>
+                      setTask(selected.id, {
+                        recurrence: {
+                          ...selected.recurrence as Extract<RecurrenceRule, { type: "custom" }>,
+                          unit: value as RecurrenceUnit,
+                        },
+                      })
+                    }
+                  />
+                </div>
+              </label>
+            )}
           </section>
           {token&&<ReminderEditor task={selected} token={token} onChange={(reminder)=>setTask(selected.id,{reminder})} onOpenSettings={()=>{setSettingsInitialTab("notifications");setSettingsOpen(true);}} onToast={pushToast}/>}
           <section className="detail-section">

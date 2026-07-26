@@ -1,6 +1,12 @@
 import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import { query, withTransaction } from "../../../db/binding";
+import {
+  nextOccurrenceDate,
+  normalizeRecurrence,
+  shiftDate,
+  type RecurrenceRule,
+} from "../../recurrence";
 
 export const TASK_STATUSES = ["inbox", "next", "waiting", "scheduled", "someday", "done"] as const;
 export type TaskStatus = (typeof TASK_STATUSES)[number];
@@ -9,10 +15,13 @@ export type TagRecord = { id:string; name:string; revision:number; updatedAt:str
 export type TaskRecord = {
   id:string; projectId?:string; parentTaskId?:string; title:string; notes:string; status:TaskStatus;
   context:string; important:boolean; startDate?:string; dueDate?:string; estimate:number; sortOrder:number;
+  recurrence?:RecurrenceRule; recurrenceSourceId?:string;
   tagIds:string[]; dependencyIds:string[]; revision:number; updatedAt:string;
   reminder?: { id:string; remindAt:string; timezone:string; channels:("email"|"webhook"|"bark"|"push")[]; status:string };
 };
-export type TaskPatch = Partial<Omit<TaskRecord,"id"|"revision"|"updatedAt">>;
+export type TaskPatch = Partial<Omit<TaskRecord,"id"|"revision"|"updatedAt"|"recurrence">> & {
+  recurrence?:RecurrenceRule | null;
+};
 
 export class GtdError extends Error {
   constructor(message:string, public status=400, public details?:unknown) { super(message); }
@@ -32,13 +41,14 @@ const normalizeTask = (row:any):TaskRecord => ({
   id:row.id, projectId:row.projectId || undefined, parentTaskId:row.parentTaskId || undefined,
   title:row.title, notes:row.notes || "", status:status(row.status), context:row.context || "", important:Boolean(row.important),
   startDate:row.startDate || undefined, dueDate:row.dueDate || undefined, estimate:Number(row.estimate) || 1,
+  recurrence:normalizeRecurrence(row.recurrence,row.dueDate || row.startDate), recurrenceSourceId:row.recurrenceSourceId || undefined,
   sortOrder:Number(row.sortOrder) || 0, tagIds:row.tagIds || [], dependencyIds:row.dependencyIds || [],
   revision:Number(row.revision) || 1, updatedAt:new Date(row.updatedAt).toISOString(),
   reminder:row.reminder ? {...row.reminder,remindAt:new Date(row.reminder.remindAt).toISOString()} : undefined,
 });
 
 const taskSelect = `SELECT t.id,t.project_id AS "projectId",t.parent_task_id AS "parentTaskId",t.title,t.notes,t.status,t.context,t.important,
- t.start_date AS "startDate",t.due_date AS "dueDate",t.estimate,t.sort_order AS "sortOrder",t.revision,t.updated_at AS "updatedAt",
+ t.start_date AS "startDate",t.due_date AS "dueDate",t.recurrence,t.recurrence_source_id AS "recurrenceSourceId",t.estimate,t.sort_order AS "sortOrder",t.revision,t.updated_at AS "updatedAt",
  COALESCE((SELECT ARRAY_AGG(tt.tag_id ORDER BY tt.tag_id) FROM task_tags tt WHERE tt.task_id=t.id),ARRAY[]::TEXT[]) AS "tagIds",
  COALESCE((SELECT ARRAY_AGG(td.depends_on_task_id ORDER BY td.depends_on_task_id) FROM task_dependencies td WHERE td.task_id=t.id),ARRAY[]::TEXT[]) AS "dependencyIds",
  (SELECT json_build_object('id',r.id,'remindAt',r.remind_at,'timezone',r.timezone,'channels',r.channels,'status',r.status) FROM task_reminders r WHERE r.task_id=t.id) AS reminder
@@ -126,12 +136,14 @@ export async function createTask(userId:string,input:TaskPatch & {title:string;i
     const id=input.id||randomUUID(), tagIds=[...new Set(input.tagIds||[])], deps=[...new Set(input.dependencyIds||[])];
     if(!input.title?.trim()) throw new GtdError("任务标题不能为空",400);
     assertDateRange(input.startDate,input.dueDate);
+    const recurrence=normalizeRecurrence(input.recurrence,input.dueDate || input.startDate);
+    if(input.recurrence && !recurrence) throw new GtdError("重复规则无效",400);
     if(input.projectId) await assertOwned(client,"projects",userId,[input.projectId]);
     if(input.parentTaskId) await assertOwned(client,"tasks",userId,[input.parentTaskId]);
     await assertOwned(client,"tags",userId,tagIds); await assertOwned(client,"tasks",userId,deps);
     const order=input.sortOrder ?? Number((await client.query<{next:number}>("SELECT COALESCE(MAX(sort_order),-1)+1 AS next FROM tasks WHERE user_id=$1",[userId])).rows[0].next);
-    await client.query(`INSERT INTO tasks(id,user_id,project_id,parent_task_id,title,notes,status,context,important,start_date,due_date,estimate,sort_order,revision,created_at,updated_at)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,1,NOW(),NOW())`,[id,userId,input.projectId||null,input.parentTaskId||null,input.title.trim().slice(0,240),(input.notes||"").slice(0,10000),status(input.status),String(input.context||"").slice(0,80),Boolean(input.important),validDate(input.startDate),validDate(input.dueDate),Math.max(1,Math.min(365,Number(input.estimate)||1)),order]);
+    await client.query(`INSERT INTO tasks(id,user_id,project_id,parent_task_id,title,notes,status,context,important,start_date,due_date,recurrence,recurrence_source_id,estimate,sort_order,revision,created_at,updated_at)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,1,NOW(),NOW())`,[id,userId,input.projectId||null,input.parentTaskId||null,input.title.trim().slice(0,240),(input.notes||"").slice(0,10000),status(input.status),String(input.context||"").slice(0,80),Boolean(input.important),validDate(input.startDate),validDate(input.dueDate),recurrence||null,input.recurrenceSourceId||null,Math.max(1,Math.min(365,Number(input.estimate)||1)),order]);
     for(const tagId of tagIds) await client.query("INSERT INTO task_tags(task_id,tag_id) VALUES($1,$2)",[id,tagId]);
     for(const dep of deps) await client.query("INSERT INTO task_dependencies(task_id,depends_on_task_id,user_id) VALUES($1,$2,$3)",[id,dep,userId]);
     const dataVersion=await bumpDataVersion(client,userId); return {record:(await getTask(userId,id,client))!,dataVersion};
@@ -145,16 +157,32 @@ export async function updateTask(userId:string,id:string,expectedRevision:number
     const next={...current,...patch};
     if(!next.title.trim()) throw new GtdError("任务标题不能为空",400);
     assertDateRange(next.startDate,next.dueDate);
+    const recurrence=normalizeRecurrence(next.recurrence,next.dueDate || next.startDate);
+    if(next.recurrence && !recurrence) throw new GtdError("重复规则无效",400);
     if(next.projectId) await assertOwned(client,"projects",userId,[next.projectId]);
     if(next.parentTaskId) { if(next.parentTaskId===id) throw new GtdError("任务不能成为自己的父任务"); await assertOwned(client,"tasks",userId,[next.parentTaskId]); await assertNoParentCycle(client,userId,id,next.parentTaskId); }
     const tags=[...new Set(next.tagIds||[])],deps=[...new Set(next.dependencyIds||[])].filter((x)=>x!==id);
     await assertOwned(client,"tags",userId,tags); await assertOwned(client,"tasks",userId,deps); await assertNoDependencyCycle(client,userId,id,deps);
-    const updated=await client.query(`UPDATE tasks SET project_id=$1,parent_task_id=$2,title=$3,notes=$4,status=$5,context=$6,important=$7,start_date=$8,due_date=$9,estimate=$10,sort_order=$11,revision=revision+1,updated_at=NOW()
-      WHERE id=$12 AND user_id=$13 AND revision=$14 RETURNING id`,[next.projectId||null,next.parentTaskId||null,next.title.trim().slice(0,240),next.notes.slice(0,10000),status(next.status),next.context.slice(0,80),Boolean(next.important),validDate(next.startDate),validDate(next.dueDate),Math.max(1,Math.min(365,next.estimate)),next.sortOrder,id,userId,expectedRevision]);
+    const updated=await client.query(`UPDATE tasks SET project_id=$1,parent_task_id=$2,title=$3,notes=$4,status=$5,context=$6,important=$7,start_date=$8,due_date=$9,recurrence=$10,estimate=$11,sort_order=$12,revision=revision+1,updated_at=NOW()
+      WHERE id=$13 AND user_id=$14 AND revision=$15 RETURNING id`,[next.projectId||null,next.parentTaskId||null,next.title.trim().slice(0,240),next.notes.slice(0,10000),status(next.status),next.context.slice(0,80),Boolean(next.important),validDate(next.startDate),validDate(next.dueDate),recurrence||null,Math.max(1,Math.min(365,next.estimate)),next.sortOrder,id,userId,expectedRevision]);
     if(!updated.rowCount) throw new GtdError("任务已在其他客户端更新",409,{current:await getTask(userId,id,client)});
     if(patch.tagIds){await client.query("DELETE FROM task_tags WHERE task_id=$1",[id]);for(const tagId of tags)await client.query("INSERT INTO task_tags(task_id,tag_id) VALUES($1,$2)",[id,tagId]);}
     if(patch.dependencyIds){await client.query("DELETE FROM task_dependencies WHERE task_id=$1 AND user_id=$2",[id,userId]);for(const dep of deps)await client.query("INSERT INTO task_dependencies(task_id,depends_on_task_id,user_id) VALUES($1,$2,$3)",[id,dep,userId]);}
     if(next.status==="done"&&current.status!=="done") await client.query("UPDATE task_reminders SET status='cancelled',updated_at=NOW() WHERE task_id=$1 AND user_id=$2 AND status IN ('pending','processing')",[id,userId]);
+    if(next.status==="done"&&current.status!=="done"&&recurrence){
+      const seriesId=current.recurrenceSourceId||current.id;
+      const existing=await client.query("SELECT 1 FROM tasks WHERE user_id=$1 AND recurrence_source_id=$2 AND id<>$3 AND status<>'done' LIMIT 1",[userId,seriesId,id]);
+      if(!existing.rowCount){
+        const completedOn=new Date().toISOString().slice(0,10),anchor=current.dueDate||current.startDate||completedOn;
+        const nextAnchor=nextOccurrenceDate(anchor,recurrence,completedOn),nextId=randomUUID();
+        const nextStart=current.startDate?shiftDate(current.startDate,anchor,nextAnchor):undefined;
+        const nextDue=current.dueDate?shiftDate(current.dueDate,anchor,nextAnchor):nextAnchor;
+        await client.query(`INSERT INTO tasks(id,user_id,project_id,parent_task_id,title,notes,status,context,important,start_date,due_date,recurrence,recurrence_source_id,estimate,sort_order,revision,created_at,updated_at)
+          VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,1,NOW(),NOW())`,[nextId,userId,current.projectId||null,current.parentTaskId||null,current.title,current.notes,current.status,current.context,current.important,nextStart||null,nextDue||null,recurrence,seriesId,current.estimate,current.sortOrder]);
+        await client.query("INSERT INTO task_tags(task_id,tag_id) SELECT $1,tag_id FROM task_tags WHERE task_id=$2",[nextId,id]);
+        await client.query("INSERT INTO task_dependencies(task_id,depends_on_task_id,user_id) SELECT $1,depends_on_task_id,user_id FROM task_dependencies WHERE task_id=$2 AND user_id=$3",[nextId,id,userId]);
+      }
+    }
     const dataVersion=await bumpDataVersion(client,userId);return{record:(await getTask(userId,id,client))!,dataVersion};
   });
 }
