@@ -3476,9 +3476,12 @@ export function GTDApp() {
             {selected.attachments.some((attachment) => attachment.mimeType.startsWith("image/")) && (
               <div className="note-images">
                 {selected.attachments.filter((attachment) => attachment.mimeType.startsWith("image/")).map((attachment) => (
-                  <button key={attachment.id} type="button" className="note-image" title="双击放大查看" onDoubleClick={() => setPreviewAttachment({ taskId: selected.id, attachment })}>
-                    <AttachmentImage taskId={selected.id} attachment={attachment} token={token} />
-                  </button>
+                  <div key={attachment.id} className="note-image">
+                    <button type="button" className="note-image-preview" title="双击放大查看" onDoubleClick={() => setPreviewAttachment({ taskId: selected.id, attachment })}>
+                      <AttachmentImage taskId={selected.id} attachment={attachment} token={token} />
+                    </button>
+                    <button type="button" className="note-image-remove" title={`删除 ${attachment.fileName}`} aria-label={`删除 ${attachment.fileName}`} onClick={() => void removeAttachment(selected.id, attachment)}>×</button>
+                  </div>
                 ))}
               </div>
             )}
