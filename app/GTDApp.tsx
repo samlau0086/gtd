@@ -19,6 +19,7 @@ type Status = "inbox" | "next" | "waiting" | "scheduled" | "someday" | "done";
 type Project = { id: string; name: string; color: string; backgroundColor?: string; textColor?: string; borderColor?: string; revision?: number; updatedAt?: string };
 type ProjectTheme = { backgroundColor: string; textColor: string; borderColor: string };
 type Tag = { id: string; name: string; revision?: number; updatedAt?: string };
+type TaskAttachment = { id: string; fileName: string; mimeType: string; sizeBytes: number; createdAt: string };
 type Task = {
   id: string;
   projectId?: string;
@@ -36,6 +37,7 @@ type Task = {
   sortOrder: number;
   tagIds: string[];
   dependencyIds: string[];
+  attachments: TaskAttachment[];
   revision?: number;
   updatedAt?: string;
   reminder?: TaskReminder;
@@ -151,7 +153,7 @@ const formatDate = (value?: string) =>
 
 const projectPayload = ({ id: _id, revision: _revision, updatedAt: _updatedAt, ...project }: Project) => project;
 const tagPayload = ({ id: _id, revision: _revision, updatedAt: _updatedAt, ...tag }: Tag) => tag;
-const taskPayload = ({ id: _id, revision: _revision, updatedAt: _updatedAt, reminder: _reminder, ...task }: Task) => task;
+const taskPayload = ({ id: _id, revision: _revision, updatedAt: _updatedAt, reminder: _reminder, attachments: _attachments, ...task }: Task) => task;
 const taskMutationPayload = (task: Task) => ({ ...taskPayload(task), projectId: task.projectId || null, parentTaskId: task.parentTaskId || null, startDate: task.startDate || null, dueDate: task.dueDate || null, recurrence: task.recurrence || null });
 const sameEntity = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right);
 
@@ -212,6 +214,7 @@ const seedState = (): AppState => {
         sortOrder: 0,
         tagIds: ["tag-focus"],
         dependencyIds: [],
+        attachments: [],
       },
       {
         id: "t-prototype",
@@ -227,6 +230,7 @@ const seedState = (): AppState => {
         sortOrder: 1,
         tagIds: ["tag-focus"],
         dependencyIds: ["t-brief"],
+        attachments: [],
       },
       {
         id: "t-review",
@@ -242,6 +246,7 @@ const seedState = (): AppState => {
         sortOrder: 2,
         tagIds: ["tag-call"],
         dependencyIds: ["t-prototype"],
+        attachments: [],
       },
       {
         id: "t-plan",
@@ -257,6 +262,7 @@ const seedState = (): AppState => {
         sortOrder: 3,
         tagIds: ["tag-quick"],
         dependencyIds: ["t-review"],
+        attachments: [],
       },
       {
         id: "t-dentist",
@@ -271,6 +277,7 @@ const seedState = (): AppState => {
         sortOrder: 4,
         tagIds: ["tag-quick"],
         dependencyIds: [],
+        attachments: [],
       },
       {
         id: "t-course",
@@ -284,6 +291,7 @@ const seedState = (): AppState => {
         sortOrder: 5,
         tagIds: ["tag-focus"],
         dependencyIds: [],
+        attachments: [],
       },
       {
         id: "t-done",
@@ -299,6 +307,7 @@ const seedState = (): AppState => {
         sortOrder: 6,
         tagIds: [],
         dependencyIds: [],
+        attachments: [],
       },
     ],
     dataVersion: 0,
@@ -1689,6 +1698,30 @@ function AIModal({
 }
 
 const authHeaders=(token:string,json=false)=>({...(json?{"Content-Type":"application/json"}:{}),Authorization:`Bearer ${token}`});
+
+const formatAttachmentSize = (sizeBytes: number) =>
+  sizeBytes < 1024 * 1024 ? `${Math.max(1, Math.round(sizeBytes / 1024))} KB` : `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
+
+function AttachmentImage({ taskId, attachment, token, className, onDoubleClick }: { taskId: string; attachment: TaskAttachment; token: string; className?: string; onDoubleClick?: () => void }) {
+  const [url, setUrl] = useState<string>();
+  useEffect(() => {
+    let active = true;
+    let objectUrl = "";
+    fetch(`/api/tasks/${encodeURIComponent(taskId)}/attachments/${encodeURIComponent(attachment.id)}`, { headers: authHeaders(token) })
+      .then((response) => response.ok ? response.blob() : Promise.reject(new Error("图片加载失败")))
+      .then((blob) => {
+        objectUrl = URL.createObjectURL(blob);
+        if (active) setUrl(objectUrl);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [attachment.id, taskId, token]);
+  if (!url) return <div className={`${className || ""} attachment-image-loading`} aria-label="图片加载中" />;
+  return <img className={className} src={url} alt={attachment.fileName} onDoubleClick={onDoubleClick} />;
+}
 const zonedNowParts=(timezone:string)=>Object.fromEntries(new Intl.DateTimeFormat("en-CA",{timeZone:timezone,year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hourCycle:"h23",weekday:"short"}).formatToParts().filter(x=>x.type!=="literal").map(x=>[x.type,x.value]));
 const nextMonday=(date:string)=>{const day=new Date(`${date}T12:00:00`).getDay();return addDays(date,day===1?7:(8-day)%7);};
 const formatReminder=(reminder:TaskReminder)=>new Intl.DateTimeFormat("zh-CN",{timeZone:reminder.timezone,month:"long",day:"numeric",weekday:"short",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).format(new Date(reminder.remindAt));
@@ -2201,9 +2234,11 @@ export function GTDApp() {
   const [dialog, setDialog] = useState<DialogRequest>();
   const [projectEditor, setProjectEditor] = useState<{ project?: Project; defaultTheme: ProjectTheme }>();
   const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const [previewAttachment, setPreviewAttachment] = useState<{ taskId: string; attachment: TaskAttachment }>();
   const loaded = useRef(false);
   const syncing = useRef(false);
   const accountMenuRef = useRef<HTMLDivElement>(null);
+  const attachmentInputRef = useRef<HTMLInputElement>(null);
   const stateRef = useRef(state);
   const serverSnapshot = useRef<AppState>({ projects: [], tasks: [], tags: [], dataVersion: 0 });
   useEffect(() => { stateRef.current = state; }, [state]);
@@ -2466,6 +2501,50 @@ export function GTDApp() {
       })),
     [],
   );
+  const uploadAttachments = async (taskId: string, files: File[]) => {
+    if (!token || !files.length) return;
+    for (const file of files) {
+      try {
+        const form = new FormData();
+        form.append("file", file);
+        const response = await fetch(`/api/tasks/${encodeURIComponent(taskId)}/attachments`, { method: "POST", headers: authHeaders(token), body: form });
+        const data = await response.json() as { record?: TaskAttachment; error?: string };
+        if (!response.ok || !data.record) throw new Error(data.error || "附件上传失败");
+        setState((current) => ({ ...current, tasks: current.tasks.map((task) => task.id === taskId ? { ...task, attachments: [...task.attachments, data.record!] } : task) }));
+        serverSnapshot.current = { ...serverSnapshot.current, tasks: serverSnapshot.current.tasks.map((task) => task.id === taskId ? { ...task, attachments: [...task.attachments, data.record!] } : task) };
+      } catch (error) {
+        pushToast(error instanceof Error ? error.message : "附件上传失败", "error");
+      }
+    }
+  };
+  const removeAttachment = async (taskId: string, attachment: TaskAttachment) => {
+    if (!token) return;
+    try {
+      const response = await fetch(`/api/tasks/${encodeURIComponent(taskId)}/attachments/${encodeURIComponent(attachment.id)}`, { method: "DELETE", headers: authHeaders(token) });
+      const data = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(data.error || "附件删除失败");
+      setState((current) => ({ ...current, tasks: current.tasks.map((task) => task.id === taskId ? { ...task, attachments: task.attachments.filter((item) => item.id !== attachment.id) } : task) }));
+      serverSnapshot.current = { ...serverSnapshot.current, tasks: serverSnapshot.current.tasks.map((task) => task.id === taskId ? { ...task, attachments: task.attachments.filter((item) => item.id !== attachment.id) } : task) };
+      if (previewAttachment?.attachment.id === attachment.id) setPreviewAttachment(undefined);
+    } catch (error) {
+      pushToast(error instanceof Error ? error.message : "附件删除失败", "error");
+    }
+  };
+  const downloadAttachment = async (taskId: string, attachment: TaskAttachment) => {
+    if (!token) return;
+    try {
+      const response = await fetch(`/api/tasks/${encodeURIComponent(taskId)}/attachments/${encodeURIComponent(attachment.id)}`, { headers: authHeaders(token) });
+      if (!response.ok) throw new Error("附件下载失败");
+      const url = URL.createObjectURL(await response.blob());
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = attachment.fileName;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      pushToast(error instanceof Error ? error.message : "附件下载失败", "error");
+    }
+  };
   const selected = state.tasks.find((task) => task.id === selectedId);
   const childTasks = selected
     ? state.tasks.filter((task) => task.parentTaskId === selected.id)
@@ -2703,6 +2782,7 @@ export function GTDApp() {
       sortOrder: state.tasks.length,
       tagIds: [],
       dependencyIds: [],
+      attachments: [],
       projectId: projectFilter,
     };
     setState({ ...state, tasks: [...state.tasks, task] });
@@ -2715,7 +2795,7 @@ export function GTDApp() {
     if (!title?.trim()) return;
     const estimate = Math.max(1, Math.round((new Date(`${dueDate}T12:00:00`).getTime() - new Date(`${startDate}T12:00:00`).getTime()) / DAY) + 1);
     const status: Status = view === "inbox" || view === "next" || view === "waiting" || view === "scheduled" || view === "someday" ? view : "next";
-    const task: Task = { id: uid(), title: title.trim(), notes: "", status, context: "", important: view === "important", startDate, dueDate, estimate, sortOrder: stateRef.current.tasks.length, tagIds: [], dependencyIds: [], projectId: projectFilter };
+    const task: Task = { id: uid(), title: title.trim(), notes: "", status, context: "", important: view === "important", startDate, dueDate, estimate, sortOrder: stateRef.current.tasks.length, tagIds: [], dependencyIds: [], attachments: [], projectId: projectFilter };
     setState((current) => ({ ...current, tasks: [...current.tasks, task] }));
     setSelectedId(task.id);
     pushToast(`任务已安排在 ${rangeLabel}`);
@@ -2736,6 +2816,7 @@ export function GTDApp() {
       sortOrder: state.tasks.length,
       tagIds: [...selected.tagIds],
       dependencyIds: [],
+      attachments: [],
     };
     setState({ ...state, tasks: [...state.tasks, child] });
     setSubtaskTitle("");
@@ -3380,8 +3461,50 @@ export function GTDApp() {
             <textarea
               value={selected.notes}
               onChange={(e) => setTask(selected.id, { notes: e.target.value })}
+              onPaste={(event) => {
+                const images = Array.from(event.clipboardData.items)
+                  .filter((item) => item.type.startsWith("image/"))
+                  .map((item) => item.getAsFile())
+                  .filter((file): file is File => Boolean(file));
+                if (images.length) {
+                  event.preventDefault();
+                  void uploadAttachments(selected.id, images);
+                }
+              }}
               placeholder="补充背景、完成标准或相关信息…"
             />
+            {selected.attachments.some((attachment) => attachment.mimeType.startsWith("image/")) && (
+              <div className="note-images">
+                {selected.attachments.filter((attachment) => attachment.mimeType.startsWith("image/")).map((attachment) => (
+                  <button key={attachment.id} type="button" className="note-image" title="双击放大查看" onDoubleClick={() => setPreviewAttachment({ taskId: selected.id, attachment })}>
+                    <AttachmentImage taskId={selected.id} attachment={attachment} token={token} />
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
+          <section className="attachments">
+            <div className="attachments-heading">
+              <span>附件</span>
+              <button type="button" title="上传附件" onClick={() => attachmentInputRef.current?.click()}>＋ 上传</button>
+              <input ref={attachmentInputRef} type="file" multiple hidden onChange={(event) => {
+                const files = Array.from(event.target.files || []);
+                event.target.value = "";
+                void uploadAttachments(selected.id, files);
+              }} />
+            </div>
+            {selected.attachments.length > 0 && <div className="attachment-list">
+              {selected.attachments.map((attachment) => (
+                <div key={attachment.id} className="attachment-row">
+                  <button type="button" className="attachment-download" onClick={() => void downloadAttachment(selected.id, attachment)} title={`下载 ${attachment.fileName}`}>
+                    <span>{attachment.mimeType.startsWith("image/") ? "图片" : "文件"}</span>
+                    <strong>{attachment.fileName}</strong>
+                    <small>{formatAttachmentSize(attachment.sizeBytes)}</small>
+                  </button>
+                  <button type="button" className="attachment-remove" title={`删除 ${attachment.fileName}`} aria-label={`删除 ${attachment.fileName}`} onClick={() => void removeAttachment(selected.id, attachment)}>×</button>
+                </div>
+              ))}
+            </div>}
           </section>
           <footer>
             <span>创建于今天</span>
@@ -3392,6 +3515,12 @@ export function GTDApp() {
             </button>
           </footer>
         </aside>
+      )}
+      {previewAttachment && (
+        <div className="image-lightbox" role="dialog" aria-modal="true" aria-label={previewAttachment.attachment.fileName} onMouseDown={(event) => event.target === event.currentTarget && setPreviewAttachment(undefined)}>
+          <button type="button" className="image-lightbox-close" title="关闭图片预览" aria-label="关闭图片预览" onClick={() => setPreviewAttachment(undefined)}>×</button>
+          <AttachmentImage taskId={previewAttachment.taskId} attachment={previewAttachment.attachment} token={token} className="image-lightbox-image" />
+        </div>
       )}
       {contextMenu && (() => {
         const menuTask = state.tasks.find((task) => task.id === contextMenu.taskId);

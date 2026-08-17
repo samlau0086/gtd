@@ -1,5 +1,6 @@
 import {
   boolean,
+  customType,
   index,
   integer,
   jsonb,
@@ -9,6 +10,12 @@ import {
   timestamp,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
+
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType() {
+    return "bytea";
+  },
+});
 
 export const users = pgTable("users", {
   id: text("id").primaryKey(),
@@ -87,6 +94,24 @@ export const tasks = pgTable(
   (table) => [
     index("tasks_user_idx").on(table.userId),
     index("tasks_project_idx").on(table.projectId),
+  ],
+);
+
+export const taskAttachments = pgTable(
+  "task_attachments",
+  {
+    id: text("id").primaryKey(),
+    taskId: text("task_id").notNull(),
+    userId: text("user_id").notNull(),
+    fileName: text("file_name").notNull(),
+    mimeType: text("mime_type").notNull().default("application/octet-stream"),
+    sizeBytes: integer("size_bytes").notNull(),
+    content: bytea("content").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    index("task_attachments_task_idx").on(table.taskId, table.createdAt),
+    index("task_attachments_user_idx").on(table.userId),
   ],
 );
 

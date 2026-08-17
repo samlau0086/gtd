@@ -12,11 +12,13 @@ export const TASK_STATUSES = ["inbox", "next", "waiting", "scheduled", "someday"
 export type TaskStatus = (typeof TASK_STATUSES)[number];
 export type ProjectRecord = { id:string; name:string; color:string; revision:number; updatedAt:string };
 export type TagRecord = { id:string; name:string; revision:number; updatedAt:string };
+export type TaskAttachment = { id:string; fileName:string; mimeType:string; sizeBytes:number; createdAt:string };
 export type TaskRecord = {
   id:string; projectId?:string; parentTaskId?:string; title:string; notes:string; status:TaskStatus;
   context:string; important:boolean; startDate?:string; dueDate?:string; estimate:number; sortOrder:number;
   recurrence?:RecurrenceRule; recurrenceSourceId?:string;
   tagIds:string[]; dependencyIds:string[]; revision:number; updatedAt:string;
+  attachments:TaskAttachment[];
   reminder?: { id:string; remindAt:string; timezone:string; channels:("email"|"webhook"|"bark"|"push")[]; status:string };
 };
 export type TaskPatch = Partial<Omit<TaskRecord,"id"|"revision"|"updatedAt"|"recurrence">> & {
@@ -43,6 +45,7 @@ const normalizeTask = (row:any):TaskRecord => ({
   startDate:row.startDate || undefined, dueDate:row.dueDate || undefined, estimate:Number(row.estimate) || 1,
   recurrence:normalizeRecurrence(row.recurrence,row.dueDate || row.startDate), recurrenceSourceId:row.recurrenceSourceId || undefined,
   sortOrder:Number(row.sortOrder) || 0, tagIds:row.tagIds || [], dependencyIds:row.dependencyIds || [],
+  attachments:(row.attachments || []).map((attachment:any) => ({...attachment,sizeBytes:Number(attachment.sizeBytes) || 0,createdAt:new Date(attachment.createdAt).toISOString()})),
   revision:Number(row.revision) || 1, updatedAt:new Date(row.updatedAt).toISOString(),
   reminder:row.reminder ? {...row.reminder,remindAt:new Date(row.reminder.remindAt).toISOString()} : undefined,
 });
@@ -51,6 +54,7 @@ const taskSelect = `SELECT t.id,t.project_id AS "projectId",t.parent_task_id AS 
  t.start_date AS "startDate",t.due_date AS "dueDate",t.recurrence,t.recurrence_source_id AS "recurrenceSourceId",t.estimate,t.sort_order AS "sortOrder",t.revision,t.updated_at AS "updatedAt",
  COALESCE((SELECT ARRAY_AGG(tt.tag_id ORDER BY tt.tag_id) FROM task_tags tt WHERE tt.task_id=t.id),ARRAY[]::TEXT[]) AS "tagIds",
  COALESCE((SELECT ARRAY_AGG(td.depends_on_task_id ORDER BY td.depends_on_task_id) FROM task_dependencies td WHERE td.task_id=t.id),ARRAY[]::TEXT[]) AS "dependencyIds",
+ COALESCE((SELECT json_agg(json_build_object('id',a.id,'fileName',a.file_name,'mimeType',a.mime_type,'sizeBytes',a.size_bytes,'createdAt',a.created_at) ORDER BY a.created_at) FROM task_attachments a WHERE a.task_id=t.id),'[]'::json) AS attachments,
  (SELECT json_build_object('id',r.id,'remindAt',r.remind_at,'timezone',r.timezone,'channels',r.channels,'status',r.status) FROM task_reminders r WHERE r.task_id=t.id) AS reminder
  FROM tasks t`;
 
